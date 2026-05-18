@@ -29,12 +29,7 @@ interface Tenant {
   joinedDate: string;
 }
 
-const defaultTenants: Tenant[] = [
-  { id: "t1", name: "Bodegón El Cangrejo C.A.", rif: "J-30492812", adminEmail: "director.cangrejo@regiobiz.com", plan: "gold", status: "active", cost: 99.00, joinedDate: "2026-02-12" },
-  { id: "t2", name: "MiniMarket La Esmeralda", rif: "J-40192831", adminEmail: "esmeralda.admin@regiobiz.com", plan: "silver", status: "active", cost: 59.00, joinedDate: "2026-03-20" },
-  { id: "t3", name: "Farmacia FarmaPlus", rif: "J-50293812", adminEmail: "carlos.farmaplus@regiobiz.com", plan: "bronze", status: "trial", cost: 0.00, joinedDate: "2026-05-01" },
-  { id: "t4", name: "RegioBIZ Corporativo", rif: "J-12345678", adminEmail: "alejandra@regiobiz.com", plan: "enterprise", status: "active", cost: 199.00, joinedDate: "2026-01-05" },
-];
+const defaultTenants: Tenant[] = [];
 
 export default function SaasConsolePage() {
   const { user } = useApp();
@@ -63,13 +58,21 @@ export default function SaasConsolePage() {
     const saved = localStorage.getItem("regiobiz_tenants");
     if (saved) {
       try {
-        setTenants(JSON.parse(saved));
+        const parsed = JSON.parse(saved) as Tenant[];
+        // Si contiene alguna de las empresas falsas iniciales, forzar limpieza
+        const hasMockData = parsed.some(t => t.id === "t1" || t.id === "t2" || t.id === "t3");
+        if (hasMockData) {
+          setTenants([]);
+          localStorage.setItem("regiobiz_tenants", JSON.stringify([]));
+        } else {
+          setTenants(parsed);
+        }
       } catch (e) {
-        setTenants(defaultTenants);
+        setTenants([]);
       }
     } else {
-      setTenants(defaultTenants);
-      localStorage.setItem("regiobiz_tenants", JSON.stringify(defaultTenants));
+      setTenants([]);
+      localStorage.setItem("regiobiz_tenants", JSON.stringify([]));
     }
   }, []);
 
