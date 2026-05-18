@@ -26,7 +26,9 @@ import {
   Camera,
   X,
   ShieldCheck,
-  ShieldX
+  ShieldX,
+  Package,
+  ChevronRight
 } from "lucide-react";
 
 interface Product {
@@ -144,6 +146,7 @@ export default function POSPage() {
   const [taxUsd, setTaxUsd] = useState(0);
   const [igtfUsd, setIgtfUsd] = useState(0);
   const [totalUsd, setTotalUsd] = useState(0);
+  const [mobileTab, setMobileTab] = useState<"catalog" | "cart">("catalog");
 
   // Sincronizar cálculos cada vez que cambie el carrito o el desglose de pago en USD en efectivo
   useEffect(() => {
@@ -884,10 +887,43 @@ export default function POSPage() {
   };
 
   return (
-    <div className="grid grid-cols-1 xl:grid-cols-12 gap-8 animate-in fade-in duration-300">
+    <div className="space-y-4 relative pb-20 xl:pb-0">
       
-      {/* SECCIÓN IZQUIERDA: BÚSQUEDA Y CATÁLOGO DE PRODUCTOS (8 columnas) */}
-      <div className="xl:col-span-7 space-y-6">
+      {/* Selector de Pestañas Móvil */}
+      <div className="flex xl:hidden border border-border bg-white sticky top-0 z-30 p-2 gap-2 rounded-2xl shadow-sm">
+        <button
+          onClick={() => setMobileTab("catalog")}
+          className={`flex-1 py-3 text-center rounded-xl text-xs font-black uppercase transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+            mobileTab === "catalog"
+              ? "bg-primary text-white shadow-md shadow-primary/10"
+              : "bg-slate-50 text-slate-600 hover:bg-slate-100"
+          }`}
+        >
+          <Package className="w-4 h-4" />
+          Catálogo
+        </button>
+        <button
+          onClick={() => setMobileTab("cart")}
+          className={`flex-1 py-3 text-center rounded-xl text-xs font-black uppercase transition-all flex items-center justify-center gap-1.5 relative cursor-pointer ${
+            mobileTab === "cart"
+              ? "bg-primary text-white shadow-md shadow-primary/10"
+              : "bg-slate-50 text-slate-600 hover:bg-slate-100"
+          }`}
+        >
+          <ShoppingCart className="w-4 h-4" />
+          Carrito ({cart.length})
+          {cart.length > 0 && (
+            <span className="absolute -top-1.5 -right-1 w-5 h-5 rounded-full bg-red-500 text-white font-mono text-[9px] font-extrabold flex items-center justify-center animate-pulse">
+              {cart.length}
+            </span>
+          )}
+        </button>
+      </div>
+
+      <div className="grid grid-cols-1 xl:grid-cols-12 gap-8 animate-in fade-in duration-300">
+        
+        {/* SECCIÓN IZQUIERDA: BÚSQUEDA Y CATÁLOGO DE PRODUCTOS (7 columnas) */}
+        <div className={`xl:col-span-7 space-y-6 ${mobileTab === "catalog" ? "block" : "hidden xl:block"}`}>
         
         {/* Barra de Búsqueda de Inventario */}
         <div className="premium-card p-4 flex items-center gap-3">
@@ -1046,7 +1082,7 @@ export default function POSPage() {
       </div>
 
       {/* SECCIÓN DERECHA: CARRITO, FACTURACIÓN FISCAL Y PAGO MIXTO (5 columnas) */}
-      <div className="xl:col-span-5 space-y-6">
+      <div className={`xl:col-span-5 space-y-6 ${mobileTab === "cart" ? "block" : "hidden xl:block"}`}>
         
         {/* PANEL DEL CARRITO DE COMPRAS */}
         <div className="premium-card p-6 flex flex-col justify-between min-h-[400px]">
@@ -1832,6 +1868,34 @@ export default function POSPage() {
           </div>
         </div>
       )}
+
+    </div>
+
+    {/* Barra de Acción Flotante en Móvil (Para ir al Carrito/Pago rápidamente) */}
+    {cart.length > 0 && mobileTab === "catalog" && (
+      <div className="fixed bottom-4 left-4 right-4 z-40 xl:hidden bg-gradient-to-r from-slate-900 to-indigo-950 text-white px-5 py-4 rounded-2xl shadow-2xl flex items-center justify-between border border-white/10 animate-fade-in-up">
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 rounded-xl bg-primary/20 text-primary flex items-center justify-center border border-primary/20 relative">
+            <ShoppingCart className="w-4 h-4 text-white" />
+            <span className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-red-500 text-white font-mono text-[9px] font-extrabold flex items-center justify-center">
+              {cart.length}
+            </span>
+          </div>
+          <div>
+            <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Total Acumulado</p>
+            <p className="text-sm font-extrabold text-white">${totalUsd.toFixed(2)} / <span className="text-[10.5px] text-sky-400">{totalBs.toFixed(2)} Bs.</span></p>
+          </div>
+        </div>
+        
+        <button
+          onClick={() => setMobileTab("cart")}
+          className="px-5 py-2.5 bg-primary hover:bg-primary/95 text-white text-[11px] font-black rounded-xl uppercase tracking-wider flex items-center gap-1.5 transition-all shadow-md shadow-primary/20 cursor-pointer"
+        >
+          Pagar Ahora
+          <ChevronRight className="w-3.5 h-3.5" />
+        </button>
+      </div>
+    )}
 
     </div>
   );
