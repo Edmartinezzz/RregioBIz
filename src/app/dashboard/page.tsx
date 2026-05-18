@@ -55,31 +55,6 @@ export default function DashboardPage() {
   const streamRef = useRef<MediaStream | null>(null);
   const scanLoopRef = useRef<number | null>(null);
 
-  // Iniciar cámara y escaneo QR
-  const startQRScanner = async () => {
-    setScanError("");
-    setScannedTicket(null);
-    setRefundStatus("");
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: "environment" }
-      });
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream;
-        videoRef.current.setAttribute("playsinline", "true");
-        videoRef.current.play();
-        streamRef.current = stream;
-        setShowQRScanner(true);
-        setTimeout(() => {
-          scanLoopRef.current = requestAnimationFrame(tick);
-        }, 300);
-      }
-    } catch (err) {
-      console.error("Error al arrancar escáner en Dashboard:", err);
-      setScanError("No se pudo acceder a la cámara. Verifica los permisos del navegador.");
-    }
-  };
-
   // Detener cámara y escaneo
   const stopQRScanner = useCallback(() => {
     if (scanLoopRef.current) {
@@ -93,13 +68,19 @@ export default function DashboardPage() {
     setShowQRScanner(false);
   }, []);
 
+  // Iniciar cámara y escaneo QR
+  const startQRScanner = () => {
+    setScanError("");
+    setScannedTicket(null);
+    setRefundStatus("");
+    setShowQRScanner(true);
+  };
+
   // Loop de escaneo continuo
-  const tick = () => {
-    if (
-      videoRef.current &&
-      canvasRef.current &&
-      videoRef.current.readyState === videoRef.current.HAVE_ENOUGH_DATA
-    ) {
+  const tick = useCallback(() => {
+    if (!videoRef.current || !canvasRef.current) return;
+    
+    if (videoRef.current.readyState === videoRef.current.HAVE_ENOUGH_DATA) {
       const canvas = canvasRef.current;
       const ctx = canvas.getContext("2d");
       if (ctx) {
@@ -126,7 +107,51 @@ export default function DashboardPage() {
       }
     }
     scanLoopRef.current = requestAnimationFrame(tick);
-  };
+  }, [stopQRScanner]);
+
+  // Manejar el ciclo de vida del stream de la cámara basándose en showQRScanner
+  useEffect(() => {
+    if (showQRScanner) {
+      let activeStream: MediaStream | null = null;
+      
+      const initCamera = async () => {
+        try {
+          const stream = await navigator.mediaDevices.getUserMedia({
+            video: { facingMode: "environment" }
+          });
+          activeStream = stream;
+          streamRef.current = stream;
+          if (videoRef.current) {
+            videoRef.current.srcObject = stream;
+            // Configurar atributos nativos de compatibilidad móvil
+            videoRef.current.setAttribute("playsinline", "true");
+            videoRef.current.play().catch(err => console.error("Error al iniciar reproducción de video:", err));
+            
+            // Esperar un breve momento a que el video cargue datos
+            setTimeout(() => {
+              scanLoopRef.current = requestAnimationFrame(tick);
+            }, 300);
+          }
+        } catch (err) {
+          console.error("Error al arrancar cámara en Dashboard:", err);
+          setScanError("No se pudo acceder a la cámara. Verifica los permisos del navegador.");
+        }
+      };
+
+      initCamera();
+
+      return () => {
+        if (scanLoopRef.current) {
+          cancelAnimationFrame(scanLoopRef.current);
+          scanLoopRef.current = null;
+        }
+        if (activeStream) {
+          activeStream.getTracks().forEach(track => track.stop());
+        }
+        streamRef.current = null;
+      };
+    }
+  }, [showQRScanner, tick]);
 
   // Gestionar devolución remota directo del Dashboard
   const handleRequestDashboardRefund = async () => {
@@ -549,6 +574,9 @@ export default function DashboardPage() {
             <div className="relative w-full aspect-square max-w-[280px] bg-black rounded-2xl overflow-hidden border-2 border-primary/40 shadow-inner group">
               <video 
                 ref={videoRef} 
+                playsInline
+                muted
+                autoPlay
                 className="absolute inset-0 w-full h-full object-cover"
               />
               
