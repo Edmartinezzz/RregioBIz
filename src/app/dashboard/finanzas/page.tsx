@@ -77,18 +77,45 @@ export default function FinanzasPage() {
             .from("financial_accounts")
             .select("*");
           if (data && !error) {
-            const mapped: Account[] = data.map((acc: any) => {
-              const isUsd = acc.balance_usd > 0 || acc.id.includes("usd") || acc.name.includes("USD") || acc.bank.includes("$") || acc.balance_bs === 0;
-              return {
-                id: acc.id,
-                name: acc.name,
-                bankName: acc.bank,
-                balance: isUsd ? Number(acc.balance_usd) : Number(acc.balance_bs),
-                currency: isUsd ? "USD" : "VES"
-              };
-            });
-            setAccounts(mapped);
-            localStorage.setItem(`regiobiz_accounts_${tenantId}`, JSON.stringify(mapped));
+            const tenantAccounts = data.filter((acc: any) => acc.id.startsWith(tenantId + "_"));
+            
+            // Si el inquilino no tiene cuentas en Supabase, inicializar sus cuentas por defecto
+            if (tenantAccounts.length === 0) {
+              const localInitial = tenantId === "default" || tenantId === "master"
+                ? initialAccounts 
+                : initialAccounts.map(a => ({ ...a, balance: 0 }));
+              
+              // Guardar las cuentas por defecto del inquilino en Supabase con su prefijo
+              for (const acc of localInitial) {
+                const isUsd = acc.currency === "USD";
+                await supabase!
+                  .from("financial_accounts")
+                  .upsert({
+                    id: `${tenantId}_${acc.id}`,
+                    name: acc.name,
+                    bank: acc.bankName,
+                    balance_usd: isUsd ? acc.balance : 0,
+                    balance_bs: isUsd ? 0 : acc.balance
+                  });
+              }
+              
+              setAccounts(localInitial);
+              localStorage.setItem(`regiobiz_accounts_${tenantId}`, JSON.stringify(localInitial));
+            } else {
+              const mapped: Account[] = tenantAccounts.map((acc: any) => {
+                const cleanId = acc.id.replace(tenantId + "_", "");
+                const isUsd = acc.balance_usd > 0 || cleanId.includes("usd") || acc.name.includes("USD") || acc.bank.includes("$") || acc.balance_bs === 0;
+                return {
+                  id: cleanId,
+                  name: acc.name,
+                  bankName: acc.bank,
+                  balance: isUsd ? Number(acc.balance_usd) : Number(acc.balance_bs),
+                  currency: isUsd ? "USD" : "VES"
+                };
+              });
+              setAccounts(mapped);
+              localStorage.setItem(`regiobiz_accounts_${tenantId}`, JSON.stringify(mapped));
+            }
           }
         } catch (err) {
           console.error("Error al cargar cuentas de Supabase:", err);
@@ -101,11 +128,12 @@ export default function FinanzasPage() {
   const saveAccountToSupabase = async (acc: Account) => {
     if (!isSupabaseConfigured()) return;
     try {
+      const tenantId = user?.tenantId || "default";
       const isUsd = acc.currency === "USD";
       await supabase!
         .from("financial_accounts")
         .upsert({
-          id: acc.id,
+          id: `${tenantId}_${acc.id}`,
           name: acc.name,
           bank: acc.bankName,
           balance_usd: isUsd ? acc.balance : 0,
@@ -119,10 +147,11 @@ export default function FinanzasPage() {
   const deleteAccountFromSupabase = async (id: string) => {
     if (!isSupabaseConfigured()) return;
     try {
+      const tenantId = user?.tenantId || "default";
       await supabase!
         .from("financial_accounts")
         .delete()
-        .eq("id", id);
+        .eq("id", `${tenantId}_${id}`);
     } catch (err) {
       console.error("Error al eliminar cuenta en Supabase:", err);
     }

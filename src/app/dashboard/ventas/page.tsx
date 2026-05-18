@@ -60,15 +60,18 @@ export default function POSPage() {
   // Cargar catálogo de productos dinámicamente de Supabase o LocalStorage
   useEffect(() => {
     if (isSupabaseConfigured()) {
+      if (!user) return;
       const fetchSupabaseProductsForPOS = async () => {
         try {
           const { data, error } = await supabase!
             .from("products")
             .select("*");
           if (data && !error) {
-            const mapped: Product[] = data.map((p: any) => ({
-              id: `p_${p.code}`,
-              code: p.code,
+            const tenantId = user.tenantId || "default";
+            const tenantProducts = data.filter((p: any) => p.code.startsWith(tenantId + "_"));
+            const mapped: Product[] = tenantProducts.map((p: any) => ({
+              id: `p_${p.code.replace(tenantId + "_", "")}`,
+              code: p.code.replace(tenantId + "_", ""),
               name: p.name,
               category: p.category.charAt(0).toUpperCase() + p.category.slice(1),
               priceUsd: Number(p.price_usd),
@@ -933,7 +936,7 @@ export default function POSPage() {
                   await supabase!
                     .from("products")
                     .update({ stock: newStock })
-                    .eq("code", it.product.code);
+                    .eq("code", `${tenantId}_${it.product.code}`);
                 } catch (dbErr) {
                   console.error("Error al actualizar stock de devolución en Supabase:", dbErr);
                 }
@@ -1689,7 +1692,7 @@ export default function POSPage() {
                             await supabase!
                               .from("products")
                               .update({ stock: newStock })
-                              .eq("code", it.product.code);
+                              .eq("code", `${tenantId}_${it.product.code}`);
                           } catch (dbErr) {
                             console.error("Error al actualizar stock en Supabase:", dbErr);
                           }

@@ -51,9 +51,11 @@ export default function InventarioPage() {
             .from("products")
             .select("*");
           if (data && !error) {
-            const mapped: ProductItem[] = data.map((p: any) => ({
-              id: `p_${p.code}`,
-              code: p.code,
+            // Filtrar productos por el inquilino actual
+            const tenantProducts = data.filter((p: any) => p.code.startsWith(tenantId + "_"));
+            const mapped: ProductItem[] = tenantProducts.map((p: any) => ({
+              id: `p_${p.code.replace(tenantId + "_", "")}`,
+              code: p.code.replace(tenantId + "_", ""),
               name: p.name,
               category: p.category.charAt(0).toUpperCase() + p.category.slice(1),
               costUsd: Number(p.cost_usd),
@@ -127,10 +129,11 @@ export default function InventarioPage() {
     // Sincronizar con Supabase si está disponible
     if (isSupabaseConfigured()) {
       try {
+        const tenantId = user?.tenantId || "default";
         await supabase!
           .from("products")
           .upsert({
-            code: newCode,
+            code: `${tenantId}_${newCode}`,
             name: newName,
             category: newCategory.toLowerCase(),
             cost_usd: parseFloat(newCost) || 0,
@@ -306,8 +309,9 @@ export default function InventarioPage() {
               taxCategory: "exempt"
             });
 
+            const tenantId = user?.tenantId || "default";
             dbRowsToSync.push({
-              code,
+              code: `${tenantId}_${code}`,
               name,
               category: category.toLowerCase(),
               cost_usd: isNaN(cost) ? 0 : cost,
