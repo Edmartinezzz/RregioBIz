@@ -197,21 +197,18 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
               </Link>
             );
           })}
-        </nav>
 
-        {/* Footer Sidebar / Logout */}
-        <div className="p-4 border-t border-border">
           <button
             onClick={() => {
               logout();
               router.push("/login");
             }}
-            className="w-full flex items-center justify-center gap-2 py-3 px-4 rounded-xl border border-border hover:bg-red-50 hover:border-red-200 text-slate-600 hover:text-red-600 transition-all text-xs font-medium cursor-pointer"
+            className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-bold text-red-600 hover:bg-red-50 hover:text-red-700 transition-all cursor-pointer text-left group mt-2 border-t border-dashed border-red-100/50 pt-3"
           >
-            <LogOut className="w-4 h-4" />
+            <LogOut className="w-4 h-4 text-red-500 transition-transform group-hover:scale-110" />
             Cerrar Sesión
           </button>
-        </div>
+        </nav>
       </aside>
 
       {/* MENU MOVIL */}
@@ -250,20 +247,19 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                   </Link>
                 );
               })}
-            </nav>
 
-            <div className="p-4 border-t border-border">
               <button
                 onClick={() => {
                   logout();
+                  setSidebarOpen(false);
                   router.push("/login");
                 }}
-                className="w-full flex items-center justify-center gap-2 py-3 px-4 rounded-xl border border-border hover:bg-red-50 hover:border-red-200 text-slate-600 hover:text-red-600 transition-all text-xs font-medium cursor-pointer"
+                className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-bold text-red-600 hover:bg-red-50 hover:text-red-700 transition-all cursor-pointer text-left group mt-2 border-t border-dashed border-red-100/50 pt-3"
               >
-                <LogOut className="w-4 h-4" />
+                <LogOut className="w-4 h-4 text-red-500 transition-transform group-hover:scale-110" />
                 Cerrar Sesión
               </button>
-            </div>
+            </nav>
           </aside>
         </div>
       )}
