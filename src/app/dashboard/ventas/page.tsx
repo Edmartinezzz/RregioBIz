@@ -1832,6 +1832,9 @@ export default function POSPage() {
             <div className="relative w-full aspect-square max-w-[280px] bg-black rounded-2xl overflow-hidden border-2 border-primary/40 shadow-inner group">
               <video 
                 ref={videoRef} 
+                playsInline
+                muted
+                autoPlay
                 className="absolute inset-0 w-full h-full object-cover"
               />
               
