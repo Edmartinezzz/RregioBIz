@@ -1,0 +1,591 @@
+"use client";
+
+import React, { useState, useEffect, useRef, useCallback } from "react";
+import { useApp } from "@/lib/context/AppContext";
+import { useRouter } from "next/navigation";
+import jsQR from "jsqr";
+import { 
+  TrendingUp, 
+  DollarSign, 
+  Activity, 
+  ShoppingBag, 
+  AlertCircle, 
+  ShieldCheck, 
+  ArrowRight,
+  RefreshCw,
+  Plus,
+  QrCode,
+  Camera,
+  X,
+  Undo,
+  Printer
+} from "lucide-react";
+import Link from "next/link";
+
+interface AuditLog {
+  id: string;
+  time: string;
+  user: string;
+  action: string;
+  status: "success" | "warning" | "info";
+}
+
+const initialLogs: AuditLog[] = [
+  { id: "log_1", time: "Hace 2 mins", user: "Cajera Valentina", action: "Solicitó descuento de 10% en venta #1094", status: "warning" },
+  { id: "log_2", time: "Hace 5 mins", user: "Directora Alejandra", action: "Actualizó tasa oficial BCV a 36.45 Bs.", status: "success" },
+  { id: "log_3", time: "Hace 15 mins", user: "Marketing Isabella", action: "Programó copy asistido por IA para Instagram", status: "info" },
+  { id: "log_4", time: "Hace 1 hora", user: "Cajera Valentina", action: "Cierre parcial de caja matutina", status: "success" },
+  { id: "log_5", time: "Hace 2 horas", user: "Directora Alejandra", action: "Modificó matriz de permisos dinámicos", status: "warning" },
+];
+
+export default function DashboardPage() {
+  const router = useRouter();
+  const { user, exchangeRate, remoteRequests, hasPermission, requestRemotePermission } = useApp();
+  const [logs, setLogs] = useState<AuditLog[]>(initialLogs);
+
+  // Estados del Escáner QR de Dashboard
+  const [showQRScanner, setShowQRScanner] = useState(false);
+  const [scannedTicket, setScannedTicket] = useState<any>(null);
+  const [scanError, setScanError] = useState("");
+  const [refundStatus, setRefundStatus] = useState("");
+  const [refundProcessing, setRefundProcessing] = useState(false);
+
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const streamRef = useRef<MediaStream | null>(null);
+  const scanLoopRef = useRef<number | null>(null);
+
+  // Iniciar cámara y escaneo QR
+  const startQRScanner = async () => {
+    setScanError("");
+    setScannedTicket(null);
+    setRefundStatus("");
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: "environment" }
+      });
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream;
+        videoRef.current.setAttribute("playsinline", "true");
+        videoRef.current.play();
+        streamRef.current = stream;
+        setShowQRScanner(true);
+        setTimeout(() => {
+          scanLoopRef.current = requestAnimationFrame(tick);
+        }, 300);
+      }
+    } catch (err) {
+      console.error("Error al arrancar escáner en Dashboard:", err);
+      setScanError("No se pudo acceder a la cámara. Verifica los permisos del navegador.");
+    }
+  };
+
+  // Detener cámara y escaneo
+  const stopQRScanner = useCallback(() => {
+    if (scanLoopRef.current) {
+      cancelAnimationFrame(scanLoopRef.current);
+      scanLoopRef.current = null;
+    }
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach(track => track.stop());
+      streamRef.current = null;
+    }
+    setShowQRScanner(false);
+  }, []);
+
+  // Loop de escaneo continuo
+  const tick = () => {
+    if (
+      videoRef.current &&
+      canvasRef.current &&
+      videoRef.current.readyState === videoRef.current.HAVE_ENOUGH_DATA
+    ) {
+      const canvas = canvasRef.current;
+      const ctx = canvas.getContext("2d");
+      if (ctx) {
+        canvas.width = videoRef.current.videoWidth;
+        canvas.height = videoRef.current.videoHeight;
+        ctx.drawImage(videoRef.current, 0, 0, canvas.width, canvas.height);
+        const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+        const code = jsQR(imageData.data, imageData.width, imageData.height, {
+          inversionAttempts: "dontInvert",
+        });
+
+        if (code) {
+          try {
+            const parsed = JSON.parse(code.data);
+            if (parsed && parsed.id) {
+              setScannedTicket(parsed);
+              stopQRScanner();
+              return;
+            }
+          } catch (e) {
+            setScanError("El código QR escaneado no es un formato válido de factura RegioBiz.");
+          }
+        }
+      }
+    }
+    scanLoopRef.current = requestAnimationFrame(tick);
+  };
+
+  // Gestionar devolución remota directo del Dashboard
+  const handleRequestDashboardRefund = async () => {
+    if (!scannedTicket) return;
+
+    setRefundProcessing(true);
+    setRefundStatus("Solicitando autorización de devolución a la Directora...");
+
+    const refundDetails = `Devolución de Ticket #${scannedTicket.id} por $${scannedTicket.usd.toFixed(2)} / ${scannedTicket.bs.toFixed(2)} Bs. (${scannedTicket.itm.length} items)`;
+
+    // Solicitar permiso remoto
+    const approved = await requestRemotePermission("devolucion", refundDetails);
+
+    setRefundProcessing(false);
+    if (approved) {
+      setRefundStatus("¡Devolución Autorizada con éxito! Caja e inventario ajustados.");
+      
+      // Registrar en el log de auditoría local en vivo
+      const newLog: AuditLog = {
+        id: `log_refund_${scannedTicket.id}`,
+        time: "Hace unos instantes",
+        user: user?.name || "Administrador",
+        action: `Procesó devolución autorizada de Ticket #${scannedTicket.id} por $${scannedTicket.usd.toFixed(2)}`,
+        status: "success"
+      };
+      setLogs(prev => [newLog, ...prev]);
+      
+      // Limpiar ticket
+      setTimeout(() => {
+        setScannedTicket(null);
+        setRefundStatus("");
+      }, 4000);
+    } else {
+      setRefundStatus("Solicitud de Devolución rechazada por la Directora.");
+    }
+  };
+
+  // Limpiar el escáner al desmontar
+  useEffect(() => {
+    return () => {
+      if (scanLoopRef.current) cancelAnimationFrame(scanLoopRef.current);
+      if (streamRef.current) streamRef.current.getTracks().forEach(track => track.stop());
+    };
+  }, []);
+  
+  // Datos financieros base de ejemplo (en USD)
+  const salesUsd = 1240.50;
+  const activeStockValueUsd = 8450.00;
+  
+  // Agregar logs en tiempo real cuando entren nuevas solicitudes
+  useEffect(() => {
+    if (remoteRequests.length > 0) {
+      const latestReq = remoteRequests[0];
+      const newLog: AuditLog = {
+        id: `log_new_${latestReq.id}`,
+        time: "Hace unos instantes",
+        user: latestReq.requesterName,
+        action: `Solicitó desbloqueo de ${latestReq.action} (${latestReq.details})`,
+        status: latestReq.status === "approved" ? "success" : latestReq.status === "rejected" ? "warning" : "info"
+      };
+
+      setLogs(prev => {
+        // Evitar duplicar logs
+        if (prev.some(l => l.id === newLog.id)) return prev;
+        return [newLog, ...prev.slice(0, 4)];
+      });
+    }
+  }, [remoteRequests]);
+
+  return (
+    <div className="space-y-8 animate-in fade-in duration-300">
+      
+      {/* Banner de Bienvenida Premium */}
+      <div className="relative p-8 rounded-3xl overflow-hidden bg-gradient-to-r from-primary/10 via-indigo-600/5 to-transparent border border-primary/20">
+        <div className="absolute top-[-20%] right-[-10%] w-[30vw] h-[30vw] rounded-full bg-primary/10 blur-[100px] pointer-events-none" />
+        
+        <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-6">
+          <div>
+            <h1 className="text-3xl font-extrabold tracking-tight text-slate-900">
+              ¡Hola de nuevo, {user?.name}!
+            </h1>
+            <p className="text-sm text-slate-600 mt-2 max-w-xl">
+              Bienvenido a tu centro de control en RegioBiz. Todos los indicadores de ventas, inventarios y finanzas se recalculan en tiempo real usando la tasa BCV del día.
+            </p>
+          </div>
+          
+          <div className="flex gap-3">
+            {hasPermission("ventas", "crear") && (
+              <Link
+                href="/dashboard/ventas"
+                className="flex items-center gap-2 px-5 py-3 bg-gradient-to-r from-primary to-indigo-600 hover:from-primary/95 hover:to-indigo-600/95 text-white text-xs font-bold rounded-xl shadow-lg shadow-primary/20 hover:shadow-primary/30 transition-all group cursor-pointer"
+              >
+                <Plus className="w-4 h-4" />
+                Nueva Venta (POS)
+                <ArrowRight className="w-3.5 h-3.5 group-hover:translate-x-1 transition-transform" />
+              </Link>
+            )}
+            
+            <button
+              onClick={startQRScanner}
+              className="flex items-center gap-2 px-5 py-3 bg-white border border-slate-200 hover:border-slate-300 text-slate-700 text-xs font-extrabold rounded-xl shadow-sm hover:shadow-md transition-all group cursor-pointer"
+            >
+              <QrCode className="w-4 h-4 text-slate-500 group-hover:scale-110 transition-transform" />
+              Escanear Factura QR
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* REJILLA DE MÉTRICAS BIMONETARIAS EN TIEMPO REAL */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+        
+        {/* Ventas del Día */}
+        <div className="premium-card premium-card-hover p-6 relative overflow-hidden group">
+          <div className="absolute top-4 right-4 w-10 h-10 rounded-xl bg-primary/10 border border-primary/20 flex items-center justify-center text-primary group-hover:rotate-12 transition-transform">
+            <ShoppingBag className="w-5 h-5" />
+          </div>
+          <span className="text-xs font-bold text-slate-400 uppercase tracking-wider block">Ventas Totales Hoy</span>
+          <div className="mt-4 space-y-1">
+            {/* USD destacado */}
+            <h3 className="text-2xl font-extrabold text-usd flex items-baseline gap-1 animate-pulse-slow">
+              <span className="text-sm opacity-85">$</span>
+              {salesUsd.toLocaleString("es-VE", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+            </h3>
+            {/* Bs. equivalente automático en tiempo real */}
+            <p className="text-sm font-bold text-bs flex items-baseline gap-1">
+              <span className="text-[10px] opacity-75">Bs.</span>
+              {(salesUsd * exchangeRate).toLocaleString("es-VE", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+            </p>
+          </div>
+          <div className="mt-4 pt-4 border-t border-border flex items-center justify-between text-[10px] text-slate-500 font-mono">
+            <span>Tasa BCV: {exchangeRate.toFixed(2)}</span>
+            <span className="text-usd flex items-center gap-0.5">
+              +12.4% vs ayer
+            </span>
+          </div>
+        </div>
+
+        {/* Valor de Inventario */}
+        <div className="premium-card premium-card-hover p-6 relative overflow-hidden group">
+          <div className="absolute top-4 right-4 w-10 h-10 rounded-xl bg-usd/10 border border-usd/20 flex items-center justify-center text-usd group-hover:rotate-12 transition-transform">
+            <DollarSign className="w-5 h-5" />
+          </div>
+          <span className="text-xs font-bold text-slate-400 uppercase tracking-wider block">Valor del Inventario</span>
+          <div className="mt-4 space-y-1">
+            <h3 className="text-2xl font-extrabold text-slate-900 flex items-baseline gap-1">
+              <span className="text-sm opacity-75">$</span>
+              {activeStockValueUsd.toLocaleString("es-VE", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+            </h3>
+            <p className="text-sm font-bold text-slate-400 flex items-baseline gap-1">
+              <span className="text-[10px] opacity-75">Bs.</span>
+              {(activeStockValueUsd * exchangeRate).toLocaleString("es-VE", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+            </p>
+          </div>
+          <div className="mt-4 pt-4 border-t border-border flex items-center justify-between text-[10px] text-slate-500 font-mono">
+            <span>1,420 productos activos</span>
+            <span className="text-emerald-500 font-bold">Stock OK</span>
+          </div>
+        </div>
+
+        {/* Tasa del Día BCV */}
+        <div className="premium-card premium-card-hover p-6 relative overflow-hidden group bg-white">
+          <div className="absolute top-4 right-4 w-10 h-10 rounded-xl bg-bs/10 border border-bs/20 flex items-center justify-center text-bs group-hover:rotate-12 transition-transform">
+            <Activity className="w-5 h-5" />
+          </div>
+          <span className="text-xs font-bold text-slate-400 uppercase tracking-wider block">Tasa Centralizada del Día</span>
+          <div className="mt-4 space-y-1">
+            <h3 className="text-2xl font-extrabold text-bs font-mono">
+              {exchangeRate.toFixed(2)}
+              <span className="text-xs font-semibold text-slate-400 ml-1">Bs / $</span>
+            </h3>
+            <p className="text-xs text-slate-500 flex items-center gap-1">
+              <ShieldCheck className="w-3.5 h-3.5 text-primary" />
+              Sugerida por Banco Central de Venezuela
+            </p>
+          </div>
+          <div className="mt-4 pt-4 border-t border-border flex items-center justify-between text-[10px] text-slate-500 font-mono">
+            <span>Actualizado: Hoy</span>
+            <span className="text-slate-400 flex items-center gap-1">
+              <RefreshCw className="w-3 h-3 animate-spin-slow" /> Real-time
+            </span>
+          </div>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        
+        {/* PANEL DE REGISTRO DE AUDITORÍA EN VIVO (MÓDULO 1) */}
+        <div className="premium-card p-6 lg:col-span-2 space-y-6">
+          <div className="flex justify-between items-center border-b border-border pb-4">
+            <div>
+              <h3 className="text-base font-bold text-slate-900 uppercase tracking-wider">Historial de Auditoría Local</h3>
+              <p className="text-xs text-slate-500 mt-1">Logs de seguridad grabados en tiempo real (inmutable)</p>
+            </div>
+            <span className="flex items-center gap-1.5 text-[9px] font-bold px-2 py-0.5 rounded-full bg-muted border border-border text-slate-600 uppercase font-mono">
+              <Activity className="w-3 h-3 text-primary animate-pulse" />
+              Live Feed
+            </span>
+          </div>
+
+          <div className="space-y-4">
+            {logs.map((log) => (
+              <div 
+                key={log.id} 
+                className="flex items-start justify-between p-3.5 rounded-xl bg-muted/40 border border-border hover:bg-muted/60 transition-all gap-4"
+              >
+                <div className="flex items-start gap-3">
+                  <div className={`w-8 h-8 rounded-lg mt-0.5 flex items-center justify-center ${
+                    log.status === "success" 
+                      ? "bg-emerald-500/10 text-emerald-400" 
+                      : log.status === "warning" 
+                      ? "bg-amber-500/10 text-amber-400" 
+                      : "bg-blue-500/10 text-blue-400"
+                  }`}>
+                    <AlertCircle className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <p className="text-xs font-bold text-slate-900">{log.user}</p>
+                    <p className="text-xs text-slate-500 mt-0.5">{log.action}</p>
+                  </div>
+                </div>
+                <span className="text-[10px] text-slate-500 whitespace-nowrap font-mono">{log.time}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* PANEL INFORMATIVO DEL NEGOCIO / RESUMEN DE COMPRA */}
+        <div className="premium-card p-6 flex flex-col justify-between">
+          <div className="space-y-4">
+            <h3 className="text-base font-bold text-slate-900 uppercase tracking-wider border-b border-border pb-4">
+              Estado de Roles & UX
+            </h3>
+            
+            <p className="text-xs text-slate-600 leading-relaxed">
+              Actualmente estás viendo la interfaz de **{user?.role === "admin" ? "Directora Alejandra (Administrador)" : user?.role === "vendedor" ? "Cajera Valentina (Ventas)" : "Marketing Isabella"}**. 
+            </p>
+
+            <div className="space-y-2 pt-2">
+              <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest block">Permisos Activos:</span>
+              <div className="space-y-1.5">
+                <div className="flex justify-between items-center text-xs p-2 rounded-lg bg-muted/40 border border-border">
+                  <span className="text-slate-600">Punto de Venta (POS)</span>
+                  <span className={`px-2 py-0.5 rounded text-[10px] font-extrabold ${hasPermission("ventas", "ver") ? "bg-emerald-500/10 text-emerald-400" : "bg-red-500/10 text-red-400"}`}>
+                    {hasPermission("ventas", "ver") ? "VISIBLE" : "OCULTO"}
+                  </span>
+                </div>
+                <div className="flex justify-between items-center text-xs p-2 rounded-lg bg-muted/40 border border-border">
+                  <span className="text-slate-600">Finanzas & Caja</span>
+                  <span className={`px-2 py-0.5 rounded text-[10px] font-extrabold ${hasPermission("finanzas", "ver") ? "bg-emerald-500/10 text-emerald-400" : "bg-red-500/10 text-red-400"}`}>
+                    {hasPermission("finanzas", "ver") ? "VISIBLE" : "OCULTO"}
+                  </span>
+                </div>
+                <div className="flex justify-between items-center text-xs p-2 rounded-lg bg-muted/40 border border-border">
+                  <span className="text-slate-600">Hub Redes Sociales</span>
+                  <span className={`px-2 py-0.5 rounded text-[10px] font-extrabold ${hasPermission("redes-sociales", "ver") ? "bg-emerald-500/10 text-emerald-400" : "bg-red-500/10 text-red-400"}`}>
+                    {hasPermission("redes-sociales", "ver") ? "VISIBLE" : "OCULTO"}
+                  </span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div className="mt-8 p-4 rounded-xl bg-muted/40 border border-border text-xs text-slate-600 flex items-start gap-2">
+            <span className="w-1.5 h-1.5 rounded-full bg-primary mt-1.5 animate-ping flex-shrink-0" />
+            <p>Puedes cambiar de usuario cerrando sesión y seleccionando otro perfil rápido en la pantalla de Login.</p>
+          </div>
+        </div>
+      </div>
+      {/* DETALLES DE LA FACTURA ESCANEADA POR QR */}
+      {scannedTicket && !showQRScanner && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 backdrop-blur-sm p-4 animate-in fade-in duration-200">
+          <div className="bg-white border border-slate-200 rounded-3xl max-w-md w-full overflow-hidden shadow-2xl relative flex flex-col p-6 text-slate-900 font-mono text-xs">
+            
+            {/* Header Factura Escaneada */}
+            <div className="w-full flex justify-between items-center pb-4 border-b border-dashed border-slate-300">
+              <div>
+                <span className="text-[9px] font-black bg-emerald-100 text-emerald-800 border border-emerald-200 px-2 py-0.5 rounded uppercase">
+                  ✓ Código QR Válido
+                </span>
+                <h3 className="text-sm font-extrabold text-slate-900 mt-2">
+                  FACTURA {scannedTicket.id}
+                </h3>
+              </div>
+              <button 
+                onClick={() => setScannedTicket(null)}
+                className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-400 hover:text-slate-900 transition-colors cursor-pointer animate-in duration-100"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Datos Generales de la Venta */}
+            <div className="py-4 space-y-2 border-b border-dashed border-slate-200">
+              <div className="flex justify-between">
+                <span className="text-slate-400 font-bold">Control:</span>
+                <span className="text-slate-800 font-bold select-all">{scannedTicket.ctrl}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-400 font-bold">Fecha:</span>
+                <span className="text-slate-600">{scannedTicket.dt}</span>
+              </div>
+              {scannedTicket.cli && (
+                <>
+                  <div className="flex justify-between">
+                    <span className="text-slate-400 font-bold">Cliente:</span>
+                    <span className="text-slate-800 font-bold">{scannedTicket.cli.n}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-slate-400 font-bold">Documento:</span>
+                    <span className="text-slate-600 font-mono">{scannedTicket.cli.d}</span>
+                  </div>
+                </>
+              )}
+            </div>
+
+            {/* Listado de Artículos */}
+            <div className="py-4 border-b border-dashed border-slate-200 max-h-48 overflow-y-auto">
+              <p className="font-extrabold text-slate-400 text-[10px] pb-2 uppercase">Artículos Comprados:</p>
+              <div className="space-y-2">
+                {scannedTicket.itm && scannedTicket.itm.map((item: any, idx: number) => (
+                  <div key={idx} className="flex justify-between items-center text-[10px]">
+                    <div className="space-y-0.5">
+                      <p className="font-extrabold text-slate-900">{item.n}</p>
+                      <p className="text-[8.5px] text-slate-400 font-mono">Código: {item.c} | Cant.: {item.q}</p>
+                    </div>
+                    <span className="font-bold text-slate-700">${(item.p * item.q).toFixed(2)}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Totales Bimonetarios */}
+            <div className="py-4 space-y-1.5 border-b border-dashed border-slate-200 bg-slate-50/50 -mx-6 px-6 my-2">
+              <div className="flex justify-between font-extrabold text-xs text-slate-900">
+                <span>TOTAL EN DIVISAS:</span>
+                <span className="text-usd">${scannedTicket.usd.toFixed(2)}</span>
+              </div>
+              <div className="flex justify-between font-extrabold text-xs text-indigo-700">
+                <span>TOTAL EN BOLÍVARES:</span>
+                <span className="text-bs">{scannedTicket.bs.toFixed(2)} Bs.</span>
+              </div>
+            </div>
+
+            {/* Estado del Reembolso / Estatus */}
+            {refundStatus && (
+              <div className="my-3 p-3 bg-amber-500/10 border border-amber-500/20 rounded-xl text-xs text-amber-600 font-medium text-center animate-pulse">
+                {refundStatus}
+              </div>
+            )}
+
+            {/* Acciones del Ticket Escaneado */}
+            <div className="mt-4 flex flex-col gap-2.5">
+              {hasPermission("ventas", "editar") ? (
+                <button
+                  onClick={handleRequestDashboardRefund}
+                  disabled={refundProcessing}
+                  className="w-full py-3 bg-gradient-to-r from-amber-500 to-orange-600 hover:from-amber-600 hover:to-orange-700 text-slate-950 font-extrabold rounded-xl text-xs transition-all flex items-center justify-center gap-1.5 cursor-pointer uppercase tracking-wider"
+                >
+                  <Undo className="w-4 h-4" />
+                  {refundProcessing ? "Procesando Devolución..." : "Solicitar Devolución Directa"}
+                </button>
+              ) : (
+                <div className="p-3 bg-slate-100 rounded-xl text-[10px] text-slate-500 text-center font-medium">
+                  🔒 Tu rol actual no posee permisos para autorizar devoluciones desde el Dashboard.
+                </div>
+              )}
+
+              <button
+                onClick={() => setScannedTicket(null)}
+                className="w-full py-3 bg-slate-100 hover:bg-slate-200 text-slate-600 font-bold rounded-xl text-xs transition-colors cursor-pointer text-center uppercase"
+              >
+                Cerrar Consulta
+              </button>
+            </div>
+
+          </div>
+        </div>
+      )}
+
+      {/* VENTANA MODAL PARA ESCÁNER QR DE CÁMARA (WEBCAM) */}
+      {showQRScanner && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 backdrop-blur-md p-4 animate-in fade-in duration-200">
+          <div className="bg-slate-900 border border-slate-800 rounded-3xl max-w-md w-full overflow-hidden shadow-2xl relative flex flex-col items-center p-6 text-white text-center">
+            
+            {/* Inyección de estilos de animación para el láser del escáner */}
+            <style dangerouslySetInnerHTML={{__html: `
+              @keyframes scannerLaser {
+                0% { top: 10%; }
+                50% { top: 90%; }
+                100% { top: 10%; }
+              }
+              .animate-scanner-laser {
+                animation: scannerLaser 3s infinite linear;
+              }
+            `}} />
+
+            {/* Cabecera del Escáner */}
+            <div className="w-full flex justify-between items-center pb-4 border-b border-slate-800 mb-4">
+              <div className="flex items-center gap-2">
+                <div className="w-2 h-2 rounded-full bg-red-500 animate-ping" />
+                <h3 className="text-sm font-bold uppercase tracking-wider text-slate-200">
+                  Lector de Facturas QR
+                </h3>
+              </div>
+              <button 
+                onClick={stopQRScanner}
+                className="p-1 rounded-lg hover:bg-slate-800 text-slate-400 hover:text-white transition-colors cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Subtítulo */}
+            <p className="text-xs text-slate-400 mb-6">
+              Apunta con la cámara de tu dispositivo al código QR de la factura impresa para verificar la transacción y gestionar su devolución.
+            </p>
+
+            {/* Video Viewport */}
+            <div className="relative w-full aspect-square max-w-[280px] bg-black rounded-2xl overflow-hidden border-2 border-primary/40 shadow-inner group">
+              <video 
+                ref={videoRef} 
+                className="absolute inset-0 w-full h-full object-cover"
+              />
+              
+              {/* Esquinas de Mira (Target corners) */}
+              <div className="absolute top-4 left-4 w-6 h-6 border-t-4 border-l-4 border-primary rounded-tl" />
+              <div className="absolute top-4 right-4 w-6 h-6 border-t-4 border-r-4 border-primary rounded-tr" />
+              <div className="absolute bottom-4 left-4 w-6 h-6 border-b-4 border-l-4 border-primary rounded-bl" />
+              <div className="absolute bottom-4 right-4 w-6 h-6 border-b-4 border-r-4 border-primary rounded-br" />
+
+              {/* Animación de línea de escaneo láser */}
+              <div className="absolute left-0 right-0 h-0.5 bg-gradient-to-r from-transparent via-red-500 to-transparent top-1/2 animate-scanner-laser shadow-[0_0_8px_rgba(239,68,68,0.7)]" />
+            </div>
+
+            {/* Canvas oculto para procesar jsqr */}
+            <canvas ref={canvasRef} className="hidden" />
+
+            {/* Mensajes de Error */}
+            {scanError && (
+              <div className="mt-4 p-3 bg-red-500/10 border border-red-500/20 rounded-xl text-xs text-red-400 font-medium">
+                {scanError}
+              </div>
+            )}
+
+            {/* Estado o Instrucción */}
+            <div className="mt-6 flex justify-center w-full gap-3">
+              <button
+                onClick={stopQRScanner}
+                className="px-6 py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold rounded-xl text-xs transition-colors cursor-pointer w-full"
+              >
+                Cancelar y Cerrar
+              </button>
+            </div>
+
+          </div>
+        </div>
+      )}
+
+    </div>
+  );
+}

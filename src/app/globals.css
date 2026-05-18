@@ -1,0 +1,151 @@
+@import "tailwindcss";
+
+@theme inline {
+  --font-sans: var(--font-sans), system-ui, sans-serif;
+  --font-mono: var(--font-mono), monospace;
+  
+  /* Brand colors */
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  
+  /* Bimonetary distinct colors */
+  --color-usd: var(--usd);
+  --color-usd-foreground: var(--usd-foreground);
+  
+  --color-bs: var(--bs);
+  --color-bs-foreground: var(--bs-foreground);
+  
+  /* UI Containers */
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  
+  --color-border: var(--border);
+  --color-ring: var(--ring);
+  
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  
+
+  
+  --animate-pulse-slow: pulse 3s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+  --animate-float: float 6s ease-in-out infinite;
+}
+
+@keyframes float {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-10px); }
+}
+
+:root {
+  /* Premium Light Mint & White Space Palette */
+  --background: #f4fcf8; /* Soft mint off-white */
+  --foreground: #0f172a; /* Slate 900 for dark crisp text */
+  
+  --primary: #10b981; /* Emerald/Mint Green brand color */
+  --primary-foreground: #ffffff;
+  
+  --usd: #059669; /* Rich Emerald USD Green */
+  --usd-foreground: #ffffff;
+  
+  --bs: #0284c7; /* Sky Blue Bolivares */
+  --bs-foreground: #ffffff;
+  
+  --card: #ffffff; /* Crisp white card */
+  --card-foreground: #0f172a;
+  
+  --muted: #e6f4ed; /* Soft minty-gray container background */
+  --muted-foreground: #475569; /* Slate 600 */
+  
+  --border: #d1ebd9; /* Subtle light green border */
+  --ring: #10b981;
+  
+  --sidebar: #ffffff; /* Elegant white sidebar */
+  --sidebar-foreground: #0f172a;
+}
+
+body {
+  background-color: var(--background) !important;
+  color: var(--foreground) !important;
+  font-family: var(--font-sans);
+  overflow-x: hidden;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Custom Scrollbars in Light Mode */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: #f4fcf8;
+}
+::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #10b981;
+}
+
+/* PREMIUM dynamic theme: clean emerald/mint borders with beautiful subtle transitions, micro-shadows, and smooth interactive scale-ups */
+.premium-card {
+  background-color: #ffffff !important;
+  border: 2px solid #bdecce !important;
+  box-shadow: 0 4px 6px -1px rgba(16, 185, 129, 0.03), 0 2px 4px -2px rgba(16, 185, 129, 0.03) !important;
+  border-radius: 0.75rem !important;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1) !important;
+}
+
+.premium-card-hover {
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1) !important;
+}
+
+.premium-card-hover:hover {
+  border-color: #10b981 !important;
+  background-color: #f0fdf4 !important;
+  transform: translateY(-4px) scale(1.02) !important;
+  box-shadow: 0 12px 20px -8px rgba(16, 185, 129, 0.12), 0 4px 12px -2px rgba(16, 185, 129, 0.08) !important;
+}
+
+.premium-card-hover:active {
+  transform: translateY(-1px) scale(0.99) !important;
+  box-shadow: 0 4px 6px -1px rgba(16, 185, 129, 0.04) !important;
+}
+
+/* Entradas y Transiciones de Alto Impacto */
+@keyframes fadeInUp {
+  from {
+    opacity: 0;
+    transform: translateY(16px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes scaleIn {
+  from {
+    opacity: 0;
+    transform: scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.animate-fade-in-up {
+  animation: fadeInUp 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.animate-scale-in {
+  animation: scaleIn 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}

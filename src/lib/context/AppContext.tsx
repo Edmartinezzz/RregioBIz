@@ -1,0 +1,377 @@
+"use client";
+
+import React, { createContext, useContext, useState, useEffect } from "react";
+import { supabase, isSupabaseConfigured } from "../supabase";
+
+// Tipados de Roles y Módulos
+export type UserRole = "admin" | "vendedor" | "marketing";
+
+export type AppModule = "ventas" | "inventario" | "finanzas" | "redes-sociales" | "configuracion";
+
+export interface PermissionActions {
+  ver: boolean;
+  crear: boolean;
+  editar: boolean;
+  eliminar: boolean;
+}
+
+export type PermissionMatrix = Record<UserRole, Record<AppModule, PermissionActions>>;
+
+export interface User {
+  id: string;
+  name: string;
+  email: string;
+  role: UserRole;
+  avatarUrl?: string;
+}
+
+export interface RemoteRequest {
+  id: string;
+  requesterId: string;
+  requesterName: string;
+  module: AppModule;
+  action: "descuento" | "devolucion" | "editar_precio";
+  details: string;
+  status: "pending" | "approved" | "rejected";
+  timestamp: Date;
+}
+
+interface AppContextType {
+  user: User | null;
+  loading: boolean;
+  exchangeRate: number;
+  permissions: PermissionMatrix;
+  remoteRequests: RemoteRequest[];
+  userOverrides: Record<string, string[]>; // user_id -> list of "module:action" overridden
+  login: (email: string, role: UserRole) => boolean;
+  logout: () => void;
+  updateExchangeRate: (newRate: number) => void;
+  updatePermission: (role: UserRole, module: AppModule, action: keyof PermissionActions, value: boolean) => void;
+  hasPermission: (module: AppModule, action: keyof PermissionActions) => boolean;
+  requestRemotePermission: (action: "descuento" | "devolucion" | "editar_precio", details: string) => Promise<boolean>;
+  approveRemoteRequest: (requestId: string) => void;
+  rejectRemoteRequest: (requestId: string) => void;
+}
+
+const defaultPermissions: PermissionMatrix = {
+  admin: {
+    ventas: { ver: true, crear: true, editar: true, eliminar: true },
+    inventario: { ver: true, crear: true, editar: true, eliminar: true },
+    finanzas: { ver: true, crear: true, editar: true, eliminar: true },
+    "redes-sociales": { ver: true, crear: true, editar: true, eliminar: true },
+    configuracion: { ver: true, crear: true, editar: true, eliminar: true },
+  },
+  vendedor: {
+    ventas: { ver: true, crear: true, editar: false, eliminar: false },
+    inventario: { ver: true, crear: false, editar: false, eliminar: false }, // Ver solo sin costos
+    finanzas: { ver: false, crear: false, editar: false, eliminar: false }, // Oculto
+    "redes-sociales": { ver: false, crear: false, editar: false, eliminar: false }, // Oculto
+    configuracion: { ver: false, crear: false, editar: false, eliminar: false }, // Oculto
+  },
+  marketing: {
+    ventas: { ver: false, crear: false, editar: false, eliminar: false }, // Oculto
+    inventario: { ver: true, crear: false, editar: false, eliminar: false }, // Ver sin costos
+    finanzas: { ver: false, crear: false, editar: false, eliminar: false }, // Oculto
+    "redes-sociales": { ver: true, crear: true, editar: true, eliminar: true },
+    configuracion: { ver: false, crear: false, editar: false, eliminar: false }, // Oculto
+  },
+};
+
+const AppContext = createContext<AppContextType | undefined>(undefined);
+
+export function AppProvider({ children }: { children: React.ReactNode }) {
+  const [user, setUser] = useState<User | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [exchangeRate, setExchangeRate] = useState<number>(36.45); // Tasa BCV inicial simulada
+  const [permissions, setPermissions] = useState<PermissionMatrix>(defaultPermissions);
+  const [remoteRequests, setRemoteRequests] = useState<RemoteRequest[]>([]);
+  const [userOverrides, setUserOverrides] = useState<Record<string, string[]>>({});
+
+  // Cargar estado inicial desde localStorage si existe (simula persistencia)
+  useEffect(() => {
+    const savedUser = localStorage.getItem("regiobiz_user");
+    const savedRate = localStorage.getItem("regiobiz_rate");
+    const savedPerms = localStorage.getItem("regiobiz_perms");
+
+    if (savedUser) setUser(JSON.parse(savedUser));
+    if (savedRate) setExchangeRate(parseFloat(savedRate));
+    if (savedPerms) setPermissions(JSON.parse(savedPerms));
+
+    // Cargar tasa de cambio en vivo desde Supabase si está configurado
+    if (isSupabaseConfigured()) {
+      const fetchSupabaseRate = async () => {
+        try {
+          const { data, error } = await supabase!
+            .from("bcv_rate")
+            .select("rate")
+            .eq("id", 1)
+            .single();
+          if (data && !error) {
+            setExchangeRate(Number(data.rate));
+          }
+        } catch (err) {
+          console.error("Error al cargar tasa en vivo de Supabase:", err);
+        }
+      };
+      fetchSupabaseRate();
+    }
+
+    // Escuchador de eventos personalizados para simular sockets en la misma pestaña o múltiples
+    const handleRealtimeUpdate = (e: Event) => {
+      const customEvent = e as CustomEvent;
+      if (customEvent.detail?.type === "RATE_UPDATE") {
+        setExchangeRate(customEvent.detail.rate);
+      } else if (customEvent.detail?.type === "PERM_UPDATE") {
+        setPermissions(customEvent.detail.permissions);
+      } else if (customEvent.detail?.type === "NEW_REQUEST") {
+        setRemoteRequests((prev) => [customEvent.detail.request, ...prev]);
+      } else if (customEvent.detail?.type === "REQUEST_APPROVED") {
+        const { requestId, userId, permissionStr } = customEvent.detail;
+        setRemoteRequests((prev) =>
+          prev.map((r) => (r.id === requestId ? { ...r, status: "approved" } : r))
+        );
+        setUserOverrides((prev) => ({
+          ...prev,
+          [userId]: [...(prev[userId] || []), permissionStr],
+        }));
+      } else if (customEvent.detail?.type === "REQUEST_REJECTED") {
+        const { requestId } = customEvent.detail;
+        setRemoteRequests((prev) =>
+          prev.map((r) => (r.id === requestId ? { ...r, status: "rejected" } : r))
+        );
+      }
+    };
+
+    window.addEventListener("regiobiz_realtime", handleRealtimeUpdate);
+    setLoading(false);
+    return () => window.removeEventListener("regiobiz_realtime", handleRealtimeUpdate);
+  }, []);
+
+  // Login simulado
+  const login = (email: string, role: UserRole): boolean => {
+    const isCarlos = email.toLowerCase().includes("carlos");
+    const names = {
+      admin: isCarlos ? "Carlos Martínez" : "Directora Alejandra",
+      vendedor: "Cajera Valentina",
+      marketing: "Marketing Isabella",
+    };
+
+    const newUser: User = {
+      id: isCarlos ? "usr_carlos" : role === "admin" ? "usr_admin" : role === "vendedor" ? "usr_vendedor" : "usr_marketing",
+      name: names[role],
+      email: email,
+      role: role,
+      avatarUrl: isCarlos 
+        ? "https://api.dicebear.com/7.x/adventurer/svg?seed=Carlos"
+        : `https://api.dicebear.com/7.x/adventurer/svg?seed=${names[role]}`,
+    };
+
+    setUser(newUser);
+    localStorage.setItem("regiobiz_user", JSON.stringify(newUser));
+    return true;
+  };
+
+  // Cierre de sesión
+  const logout = () => {
+    setUser(null);
+    localStorage.removeItem("regiobiz_user");
+  };
+
+  // Actualización centralizada de la tasa BCV del día
+  const updateExchangeRate = async (newRate: number) => {
+    setExchangeRate(newRate);
+    localStorage.setItem("regiobiz_rate", newRate.toString());
+
+    // Sincronizar con Supabase si está disponible
+    if (isSupabaseConfigured()) {
+      try {
+        await supabase!
+          .from("bcv_rate")
+          .update({ rate: newRate, updated_at: new Date() })
+          .eq("id", 1);
+      } catch (err) {
+        console.error("Error al actualizar tasa en Supabase:", err);
+      }
+    }
+    
+    // Despachar evento para simular sincronización real-time en UI
+    window.dispatchEvent(
+      new CustomEvent("regiobiz_realtime", {
+        detail: { type: "RATE_UPDATE", rate: newRate },
+      })
+    );
+  };
+
+  // Actualizar permisos dinámicamente desde el panel del Administrador
+  const updatePermission = (
+    role: UserRole,
+    module: AppModule,
+    action: keyof PermissionActions,
+    value: boolean
+  ) => {
+    const updated = {
+      ...permissions,
+      [role]: {
+        ...permissions[role],
+        [module]: {
+          ...permissions[role][module],
+          [action]: value,
+        },
+      },
+    };
+
+    setPermissions(updated);
+    localStorage.setItem("regiobiz_perms", JSON.stringify(updated));
+
+    // Despachar evento en tiempo real
+    window.dispatchEvent(
+      new CustomEvent("regiobiz_realtime", {
+        detail: { type: "PERM_UPDATE", permissions: updated },
+      })
+    );
+  };
+
+  // Comprobar si el usuario actual tiene cierto permiso (evalúa RBAC + Overrides)
+  const hasPermission = (module: AppModule, action: keyof PermissionActions): boolean => {
+    if (!user) return false;
+    
+    // Los administradores (Directora) tienen siempre acceso total
+    if (user.role === "admin") return true;
+
+    // Verificar si hay una autorización temporal sobreescribiendo el permiso
+    const userPermissionStr = `${module}:${action}`;
+    if (userOverrides[user.id]?.includes(userPermissionStr)) {
+      return true;
+    }
+
+    // De lo contrario, evaluar la matriz estándar
+    return permissions[user.role]?.[module]?.[action] || false;
+  };
+
+  // Vendedora solicita permiso temporal a la Directora
+  const requestRemotePermission = (
+    action: "descuento" | "devolucion" | "editar_precio",
+    details: string
+  ): Promise<boolean> => {
+    if (!user) return Promise.resolve(false);
+
+    const newRequest: RemoteRequest = {
+      id: `req_${Math.random().toString(36).substring(2, 9)}`,
+      requesterId: user.id,
+      requesterName: user.name,
+      module: action === "devolucion" ? "finanzas" : "ventas",
+      action: action,
+      details: details,
+      status: "pending",
+      timestamp: new Date(),
+    };
+
+    // Agregar localmente
+    setRemoteRequests((prev) => [newRequest, ...prev]);
+
+    // Emitir en tiempo real
+    window.dispatchEvent(
+      new CustomEvent("regiobiz_realtime", {
+        detail: { type: "NEW_REQUEST", request: newRequest },
+      })
+    );
+
+    // Retorna una promesa que se resolverá cuando cambie el estado en localStorage
+    return new Promise((resolve) => {
+      const checkStatusInterval = setInterval(() => {
+        setRemoteRequests((currentRequests) => {
+          const match = currentRequests.find((r) => r.id === newRequest.id);
+          if (match?.status === "approved") {
+            clearInterval(checkStatusInterval);
+            resolve(true);
+          } else if (match?.status === "rejected") {
+            clearInterval(checkStatusInterval);
+            resolve(false);
+          }
+          return currentRequests;
+        });
+      }, 1000);
+
+      // Timeout de 60 segundos si nadie aprueba la solicitud
+      setTimeout(() => {
+        clearInterval(checkStatusInterval);
+        resolve(false);
+      }, 60000);
+    });
+  };
+
+  // Directora aprueba la solicitud
+  const approveRemoteRequest = (requestId: string) => {
+    const req = remoteRequests.find((r) => r.id === requestId);
+    if (!req) return;
+
+    // Determinar qué permiso de módulo se habilita
+    let permissionStr = "ventas:editar"; // Descuento o cambio de precio
+    if (req.action === "devolucion") {
+      permissionStr = "finanzas:crear";
+    }
+
+    // Emitir aprobación en tiempo real
+    window.dispatchEvent(
+      new CustomEvent("regiobiz_realtime", {
+        detail: {
+          type: "REQUEST_APPROVED",
+          requestId,
+          userId: req.requesterId,
+          permissionStr,
+        },
+      })
+    );
+
+    // Remover el override después de 15 segundos para simular transaccionalidad de un solo uso
+    setTimeout(() => {
+      setUserOverrides((prev) => {
+        const userList = prev[req.requesterId] || [];
+        return {
+          ...prev,
+          [req.requesterId]: userList.filter((p) => p !== permissionStr),
+        };
+      });
+    }, 15000);
+  };
+
+  // Directora rechaza la solicitud
+  const rejectRemoteRequest = (requestId: string) => {
+    window.dispatchEvent(
+      new CustomEvent("regiobiz_realtime", {
+        detail: { type: "REQUEST_REJECTED", requestId },
+      })
+    );
+  };
+
+  return (
+    <AppContext.Provider
+      value={{
+        user,
+        loading,
+        exchangeRate,
+        permissions,
+        remoteRequests,
+        userOverrides,
+        login,
+        logout,
+        updateExchangeRate,
+        updatePermission,
+        hasPermission,
+        requestRemotePermission,
+        approveRemoteRequest,
+        rejectRemoteRequest,
+      }}
+    >
+      {children}
+    </AppContext.Provider>
+  );
+}
+
+export function useApp() {
+  const context = useContext(AppContext);
+  if (!context) {
+    throw new Error("useApp debe usarse dentro de un AppProvider");
+  }
+  return context;
+}
