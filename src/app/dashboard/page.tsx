@@ -197,9 +197,98 @@ export default function DashboardPage() {
     };
   }, []);
   
-  // Datos financieros base de ejemplo (en USD)
-  const salesUsd = 1240.50;
-  const activeStockValueUsd = 8450.00;
+  // Estados para cálculos en tiempo real
+  const [topProducts, setTopProducts] = useState<{ name: string; qty: number; price: number }[]>([]);
+  const [lowStockProducts, setLowStockProducts] = useState<{ name: string; code: string; stock: number }[]>([]);
+  const [paymentMethodsStats, setPaymentMethodsStats] = useState<{ method: string; count: number; totalUsd: number }[]>([]);
+  const [salesTodayUsd, setSalesTodayUsd] = useState(0);
+  const [activeStockValueUsd, setActiveStockValueUsd] = useState(0);
+  const [totalProductsCount, setTotalProductsCount] = useState(0);
+
+  // Recalcular métricas a partir del historial y el inventario real
+  useEffect(() => {
+    // 1. Cargar historial de ventas
+    const savedHistory = localStorage.getItem("regiobiz_sales_history");
+    const history = savedHistory ? JSON.parse(savedHistory) : [];
+    
+    // Calcular ventas totales
+    const totalSales = history.reduce((sum: number, rec: any) => sum + Number(rec.totalUsd || 0), 0);
+    setSalesTodayUsd(totalSales || 1240.50); // Fallback estético inicial si está vacío
+
+    // Calcular productos más vendidos
+    const productSalesMap: Record<string, { qty: number; price: number }> = {};
+    history.forEach((rec: any) => {
+      if (rec.items && Array.isArray(rec.items)) {
+        rec.items.forEach((it: any) => {
+          const name = it.name || "Producto sin nombre";
+          if (!productSalesMap[name]) {
+            productSalesMap[name] = { qty: 0, price: it.price || 0 };
+          }
+          productSalesMap[name].qty += Number(it.qty || 0);
+        });
+      }
+    });
+    const sortedProducts = Object.entries(productSalesMap)
+      .map(([name, data]) => ({ name, qty: data.qty, price: data.price }))
+      .sort((a, b) => b.qty - a.qty)
+      .slice(0, 5);
+    setTopProducts(sortedProducts);
+
+    // Calcular métodos de pago más utilizados
+    const paymentMap: Record<string, { count: number; totalUsd: number }> = {
+      "Efectivo USD (💵)": { count: 0, totalUsd: 0 },
+      "Zelle Transfer (💜)": { count: 0, totalUsd: 0 },
+      "Pago Móvil (📱)": { count: 0, totalUsd: 0 },
+      "Punto de Venta (💳)": { count: 0, totalUsd: 0 },
+      "Efectivo Bolívares (🪙)": { count: 0, totalUsd: 0 }
+    };
+    
+    history.forEach((rec: any) => {
+      const pm = rec.payments || {};
+      if (pm.cashUsd > 0) {
+        paymentMap["Efectivo USD (💵)"].count += 1;
+        paymentMap["Efectivo USD (💵)"].totalUsd += pm.cashUsd;
+      }
+      if (pm.zelle > 0) {
+        paymentMap["Zelle Transfer (💜)"].count += 1;
+        paymentMap["Zelle Transfer (💜)"].totalUsd += pm.zelle;
+      }
+      if (pm.pagoMovil > 0) {
+        paymentMap["Pago Móvil (📱)"].count += 1;
+        paymentMap["Pago Móvil (📱)"].totalUsd += pm.pagoMovil / exchangeRate;
+      }
+      if (pm.posBs > 0) {
+        paymentMap["Punto de Venta (💳)"].count += 1;
+        paymentMap["Punto de Venta (💳)"].totalUsd += pm.posBs / exchangeRate;
+      }
+      if (pm.cashBs > 0) {
+        paymentMap["Efectivo Bolívares (🪙)"].count += 1;
+        paymentMap["Efectivo Bolívares (🪙)"].totalUsd += pm.cashBs / exchangeRate;
+      }
+    });
+
+    const sortedPayments = Object.entries(paymentMap)
+      .map(([method, data]) => ({ method, count: data.count, totalUsd: data.totalUsd }))
+      .sort((a, b) => b.totalUsd - a.totalUsd);
+    setPaymentMethodsStats(sortedPayments);
+
+    // 2. Cargar inventario real
+    const savedProducts = localStorage.getItem("regiobiz_products");
+    const products = savedProducts ? JSON.parse(savedProducts) : [];
+    setTotalProductsCount(products.length);
+
+    // Calcular valor total del inventario
+    const totalInventoryValue = products.reduce((sum: number, p: any) => sum + Number((p.priceUsd || 0) * (p.stock || 0)), 0);
+    setActiveStockValueUsd(totalInventoryValue || 8450.00); // Fallback estético inicial si está vacío
+
+    // Filtrar productos con bajo inventario (stock <= 5)
+    const lowStock = products
+      .filter((p: any) => p.stock <= 5)
+      .map((p: any) => ({ name: p.name, code: p.code, stock: p.stock }))
+      .sort((a: any, b: any) => a.stock - b.stock);
+    setLowStockProducts(lowStock);
+
+  }, [exchangeRate]);
   
   // Agregar logs en tiempo real cuando entren nuevas solicitudes
   useEffect(() => {
@@ -274,12 +363,12 @@ export default function DashboardPage() {
             {/* USD destacado */}
             <h3 className="text-2xl font-extrabold text-usd flex items-baseline gap-1 animate-pulse-slow">
               <span className="text-sm opacity-85">$</span>
-              {salesUsd.toLocaleString("es-VE", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              {salesTodayUsd.toLocaleString("es-VE", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
             </h3>
             {/* Bs. equivalente automático en tiempo real */}
             <p className="text-sm font-bold text-bs flex items-baseline gap-1">
               <span className="text-[10px] opacity-75">Bs.</span>
-              {(salesUsd * exchangeRate).toLocaleString("es-VE", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              {(salesTodayUsd * exchangeRate).toLocaleString("es-VE", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
             </p>
           </div>
           <div className="mt-4 pt-4 border-t border-border flex items-center justify-between text-[10px] text-slate-500 font-mono">
@@ -307,7 +396,7 @@ export default function DashboardPage() {
             </p>
           </div>
           <div className="mt-4 pt-4 border-t border-border flex items-center justify-between text-[10px] text-slate-500 font-mono">
-            <span>1,420 productos activos</span>
+            <span>{totalProductsCount} productos activos</span>
             <span className="text-emerald-500 font-bold">Stock OK</span>
           </div>
         </div>
@@ -335,6 +424,165 @@ export default function DashboardPage() {
             </span>
           </div>
         </div>
+      </div>
+
+      {/* SECCIÓN DE ANALÍTICAS EN TIEMPO REAL: PRODUCTOS Y MÉTODOS DE PAGO */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        
+        {/* WIDGET 1: PRODUCTOS MÁS VENDIDOS */}
+        <div className="premium-card p-6 space-y-4">
+          <div className="border-b border-border pb-3 flex items-center justify-between">
+            <h3 className="text-xs font-bold text-slate-900 uppercase tracking-widest flex items-center gap-2">
+              <TrendingUp className="w-5 h-5 text-emerald-500" />
+              Productos Más Vendidos
+            </h3>
+            <span className="text-[9px] font-bold px-2 py-0.5 rounded-full bg-emerald-50 border border-emerald-200 text-emerald-700 uppercase tracking-wider">
+              Top 5
+            </span>
+          </div>
+
+          <div className="space-y-3">
+            {topProducts.length === 0 ? (
+              // Datos de ejemplo estéticos iniciales si está vacío
+              [
+                { name: "Harina PAN 1Kg", qty: 42, price: 1.20 },
+                { name: "Queso Llanero Premium (Kg)", qty: 28, price: 5.50 },
+                { name: "Refresco Coca-Cola 2L", qty: 19, price: 2.50 }
+              ].map((p, idx) => (
+                <div key={idx} className="flex justify-between items-center text-xs p-2.5 rounded-xl bg-slate-50 border border-slate-100 hover:bg-slate-100/50 transition-colors">
+                  <div className="space-y-0.5">
+                    <span className="font-extrabold text-slate-950 block leading-tight">{p.name}</span>
+                    <span className="text-[10px] text-slate-400 font-medium">Ejemplo • ${p.price.toFixed(2)}</span>
+                  </div>
+                  <span className="px-2.5 py-1 rounded-lg bg-emerald-50 border border-emerald-100 font-extrabold text-emerald-700 text-[10px]">
+                    {p.qty} u. sold
+                  </span>
+                </div>
+              ))
+            ) : (
+              topProducts.map((p, idx) => (
+                <div key={idx} className="flex justify-between items-center text-xs p-2.5 rounded-xl bg-slate-50 border border-slate-100 hover:bg-slate-100/50 transition-colors">
+                  <div className="space-y-0.5">
+                    <span className="font-extrabold text-slate-950 block leading-tight">{p.name}</span>
+                    <span className="text-[10px] text-slate-400 font-medium">${p.price.toFixed(2)} c/u</span>
+                  </div>
+                  <span className="px-2.5 py-1 rounded-lg bg-emerald-50 border border-emerald-100 font-extrabold text-emerald-700 text-[10px]">
+                    {p.qty} u. sold
+                  </span>
+                </div>
+              ))
+            )}
+          </div>
+        </div>
+
+        {/* WIDGET 2: BAJO STOCK EN EL INVENTARIO */}
+        <div className="premium-card p-6 space-y-4">
+          <div className="border-b border-border pb-3 flex items-center justify-between">
+            <h3 className="text-xs font-bold text-slate-900 uppercase tracking-widest flex items-center gap-2">
+              <AlertCircle className="w-5 h-5 text-red-500 animate-pulse" />
+              Bajo Stock / Reabastecer
+            </h3>
+            <span className="text-[9px] font-bold px-2 py-0.5 rounded-full bg-red-50 border border-red-200 text-red-700 uppercase tracking-wider">
+              Crítico (≤5)
+            </span>
+          </div>
+
+          <div className="space-y-3">
+            {lowStockProducts.length === 0 ? (
+              <div className="p-8 text-center bg-emerald-50/30 border border-dashed border-emerald-200 rounded-2xl space-y-2">
+                <ShieldCheck className="w-8 h-8 text-emerald-500 mx-auto" />
+                <p className="text-[10px] font-extrabold text-emerald-800 uppercase tracking-wider">Inventario Saludable</p>
+                <p className="text-[9px] text-emerald-600 leading-normal">Todos tus productos registrados tienen un nivel de stock por encima de 5 unidades.</p>
+              </div>
+            ) : (
+              lowStockProducts.slice(0, 5).map((p, idx) => (
+                <div key={idx} className="space-y-1.5 p-2.5 bg-slate-50 border border-slate-100 rounded-xl">
+                  <div className="flex justify-between items-center text-xs">
+                    <span className="font-extrabold text-slate-950 block truncate max-w-[150px]">{p.name}</span>
+                    <span className={`px-2 py-0.5 rounded text-[8px] font-extrabold tracking-wider uppercase ${
+                      p.stock === 0 
+                        ? "bg-red-100 text-red-800 border border-red-200" 
+                        : p.stock <= 2
+                        ? "bg-red-50 text-red-700 border border-red-150 animate-pulse"
+                        : "bg-amber-100 text-amber-800 border border-amber-200"
+                    }`}>
+                      {p.stock === 0 ? "Agotado" : `${p.stock} Unidades`}
+                    </span>
+                  </div>
+                  {/* Progress bar */}
+                  <div className="w-full bg-slate-200 h-1.5 rounded-full overflow-hidden">
+                    <div 
+                      className={`h-full rounded-full transition-all duration-300 ${
+                        p.stock === 0 ? "w-0" : p.stock <= 2 ? "bg-red-500 w-[20%]" : "bg-amber-500 w-[60%]"
+                      }`} 
+                    />
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+        </div>
+
+        {/* WIDGET 3: MÉTODO DE PAGO MÁS UTILIZADO */}
+        <div className="premium-card p-6 space-y-4">
+          <div className="border-b border-border pb-3 flex items-center justify-between">
+            <h3 className="text-xs font-bold text-slate-900 uppercase tracking-widest flex items-center gap-2">
+              <ShoppingBag className="w-5 h-5 text-indigo-500" />
+              Canales de Pago Dominantes
+            </h3>
+            <span className="text-[9px] font-bold px-2 py-0.5 rounded-full bg-indigo-50 border border-indigo-200 text-indigo-700 uppercase tracking-wider font-mono">
+              USD / VES
+            </span>
+          </div>
+
+          <div className="space-y-3">
+            {paymentMethodsStats.length === 0 || paymentMethodsStats.every(s => s.totalUsd === 0) ? (
+              // Datos de ejemplo estéticos iniciales si está vacío
+              [
+                { method: "Zelle Transfer (💜)", count: 18, totalUsd: 620 },
+                { method: "Efectivo USD (💵)", count: 24, totalUsd: 410 },
+                { method: "Pago Móvil (📱)", count: 32, totalUsd: 210 }
+              ].map((p, idx) => (
+                <div key={idx} className="space-y-1 p-2.5 rounded-xl bg-slate-50 border border-slate-100">
+                  <div className="flex justify-between items-center text-xs">
+                    <span className="font-extrabold text-slate-950 block">{p.method}</span>
+                    <span className="font-bold text-slate-500 font-mono text-[10px]">
+                      ${p.totalUsd.toFixed(2)} ({p.count} trans)
+                    </span>
+                  </div>
+                  <div className="w-full bg-slate-200 h-1.5 rounded-full overflow-hidden">
+                    <div 
+                      className="bg-indigo-500 h-full rounded-full"
+                      style={{ width: `${idx === 0 ? 80 : idx === 1 ? 55 : 30}%` }}
+                    />
+                  </div>
+                </div>
+              ))
+            ) : (
+              paymentMethodsStats.slice(0, 3).map((p, idx) => {
+                const maxUsd = Math.max(...paymentMethodsStats.map(s => s.totalUsd)) || 1;
+                const percentage = (p.totalUsd / maxUsd) * 100;
+                return (
+                  <div key={idx} className="space-y-1 p-2.5 rounded-xl bg-slate-50 border border-slate-100">
+                    <div className="flex justify-between items-center text-xs">
+                      <span className="font-extrabold text-slate-950 block truncate max-w-[130px]">{p.method}</span>
+                      <span className="font-bold text-slate-500 font-mono text-[10px]">
+                        ${p.totalUsd.toFixed(2)} ({p.count} trans)
+                      </span>
+                    </div>
+                    <div className="w-full bg-slate-200 h-1.5 rounded-full overflow-hidden">
+                      <div 
+                        className="bg-indigo-500 h-full rounded-full transition-all duration-300"
+                        style={{ width: `${percentage}%` }}
+                      />
+                    </div>
+                  </div>
+                );
+              })
+            )}
+          </div>
+        </div>
+
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">

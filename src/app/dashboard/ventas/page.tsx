@@ -903,8 +903,45 @@ export default function POSPage() {
 
     setRefundProcessing(false);
     if (approved) {
+      // Reincorporar productos al inventario
+      if (scannedTicket && scannedTicket.items) {
+        try {
+          const savedProducts = localStorage.getItem("regiobiz_products");
+          if (savedProducts) {
+            const products = JSON.parse(savedProducts);
+            const updatedProducts = products.map((prod: any) => {
+              const returnedItem = scannedTicket.items.find((it: any) => it.product.code === prod.code || it.product.id === prod.id);
+              if (returnedItem) {
+                return {
+                  ...prod,
+                  stock: prod.stock + returnedItem.quantity
+                };
+              }
+              return prod;
+            });
+            localStorage.setItem("regiobiz_products", JSON.stringify(updatedProducts));
+
+            // Sincronizar con Supabase
+            if (isSupabaseConfigured()) {
+              scannedTicket.items.forEach(async (it: any) => {
+                try {
+                  const newStock = it.product.stock + it.quantity;
+                  await supabase!
+                    .from("products")
+                    .update({ stock: newStock })
+                    .eq("code", it.product.code);
+                } catch (dbErr) {
+                  console.error("Error al actualizar stock de devolución en Supabase:", dbErr);
+                }
+              });
+            }
+          }
+        } catch (e) {
+          console.error("Error al reincorporar inventario:", e);
+        }
+      }
+
       setRefundStatus("¡Autorización Aprobada! Devolución procesada. El inventario ha sido devuelto y la caja ajustada.");
-      // Simular reincorporación de productos
       resetPOS();
     } else {
       setRefundStatus("Solicitud de Devolución rechazada por la Directora.");
@@ -1615,11 +1652,47 @@ export default function POSPage() {
                     itemsCount: generatedTicket.items.reduce((sum: number, item: any) => sum + item.quantity, 0),
                     totalUsd: generatedTicket.totalUsd,
                     totalBs: generatedTicket.totalBs,
-                    items: generatedTicket.items.map((it: any) => ({ name: it.product.name, qty: it.quantity, price: it.product.priceUsd })),
+                    items: generatedTicket.items.map((it: any) => ({ name: it.product.name, qty: it.quantity, price: it.product.priceUsd, code: it.product.code })),
                     payments: generatedTicket.payments
                   };
                   history.unshift(newRecord);
                   localStorage.setItem("regiobiz_sales_history", JSON.stringify(history));
+
+                  // DESCONTAR STOCK DEL INVENTARIO LOCAL Y NUBE
+                  const savedProducts = localStorage.getItem("regiobiz_products");
+                  if (savedProducts) {
+                    try {
+                      const products = JSON.parse(savedProducts);
+                      const updatedProducts = products.map((prod: any) => {
+                        const soldItem = generatedTicket.items.find((it: any) => it.product.code === prod.code || it.product.id === prod.id);
+                        if (soldItem) {
+                          return {
+                            ...prod,
+                            stock: Math.max(0, prod.stock - soldItem.quantity)
+                          };
+                        }
+                        return prod;
+                      });
+                      localStorage.setItem("regiobiz_products", JSON.stringify(updatedProducts));
+                      
+                      // Sincronizar con Supabase si está disponible
+                      if (isSupabaseConfigured()) {
+                        generatedTicket.items.forEach(async (it: any) => {
+                          try {
+                            const newStock = Math.max(0, it.product.stock - it.quantity);
+                            await supabase!
+                              .from("products")
+                              .update({ stock: newStock })
+                              .eq("code", it.product.code);
+                          } catch (dbErr) {
+                            console.error("Error al actualizar stock en Supabase:", dbErr);
+                          }
+                        });
+                      }
+                    } catch (e) {
+                      console.error("Error al descontar inventario:", e);
+                    }
+                  }
 
                   // TRASLADO AUTOMÁTICO DE DINERO A CUENTAS BANCARIAS BIMONETARIAS
                   // a1: Caja Fuerte USD (Efectivo $)
