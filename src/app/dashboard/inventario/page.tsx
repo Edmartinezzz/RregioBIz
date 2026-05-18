@@ -39,8 +39,11 @@ export default function InventarioPage() {
   
   const [products, setProducts] = useState<ProductItem[]>(initialProducts);
 
-  // Cargar inventario desde Supabase o LocalStorage
+  // Cargar inventario desde Supabase o LocalStorage (específico para el inquilino)
   useEffect(() => {
+    if (!user) return;
+    const tenantId = user.tenantId || "default";
+
     if (isSupabaseConfigured()) {
       const fetchSupabaseProducts = async () => {
         try {
@@ -66,7 +69,7 @@ export default function InventarioPage() {
       };
       fetchSupabaseProducts();
     } else {
-      const saved = localStorage.getItem("regiobiz_products");
+      const saved = localStorage.getItem(`regiobiz_products_${tenantId}`);
       if (saved) {
         try {
           setProducts(JSON.parse(saved));
@@ -77,14 +80,17 @@ export default function InventarioPage() {
         setProducts([]);
       }
     }
-  }, []);
+  }, [user]);
 
-  // Persistir en localstorage cuando cambie el inventario
+  // Persistir en localstorage cuando cambie el inventario (específico para el inquilino)
   useEffect(() => {
+    if (!user) return;
+    const tenantId = user.tenantId || "default";
     if (!isSupabaseConfigured()) {
-      localStorage.setItem("regiobiz_products", JSON.stringify(products));
+      localStorage.setItem(`regiobiz_products_${tenantId}`, JSON.stringify(products));
     }
-  }, [products]);
+  }, [products, user]);
+
   const [isUploading, setIsUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState("");
   const [searchTerm, setSearchTerm] = useState("");

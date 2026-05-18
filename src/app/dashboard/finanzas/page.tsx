@@ -47,18 +47,27 @@ export default function FinanzasPage() {
   const [accounts, setAccounts] = useState<Account[]>(initialAccounts);
   const [salesHistory, setSalesHistory] = useState<any[]>([]);
   
-  // Cargar cuentas y ventas desde localStorage/Supabase
+  // Cargar cuentas y ventas desde localStorage/Supabase (específico de inquilino)
   useEffect(() => {
-    const savedAccounts = localStorage.getItem("regiobiz_accounts");
+    if (!user) return;
+    const tenantId = user.tenantId || "default";
+
+    const savedAccounts = localStorage.getItem(`regiobiz_accounts_${tenantId}`);
     if (savedAccounts) {
       setAccounts(JSON.parse(savedAccounts));
     } else {
-      localStorage.setItem("regiobiz_accounts", JSON.stringify(initialAccounts));
+      const localInitial = tenantId === "default" 
+        ? initialAccounts 
+        : initialAccounts.map(a => ({ ...a, balance: 0 }));
+      localStorage.setItem(`regiobiz_accounts_${tenantId}`, JSON.stringify(localInitial));
+      setAccounts(localInitial);
     }
 
-    const savedSales = localStorage.getItem("regiobiz_sales_history");
+    const savedSales = localStorage.getItem(`regiobiz_sales_history_${tenantId}`);
     if (savedSales) {
       setSalesHistory(JSON.parse(savedSales));
+    } else {
+      setSalesHistory([]);
     }
 
     if (isSupabaseConfigured()) {
@@ -79,7 +88,7 @@ export default function FinanzasPage() {
               };
             });
             setAccounts(mapped);
-            localStorage.setItem("regiobiz_accounts", JSON.stringify(mapped));
+            localStorage.setItem(`regiobiz_accounts_${tenantId}`, JSON.stringify(mapped));
           }
         } catch (err) {
           console.error("Error al cargar cuentas de Supabase:", err);
@@ -87,7 +96,7 @@ export default function FinanzasPage() {
       };
       fetchSupabaseAccounts();
     }
-  }, []);
+  }, [user]);
 
   const saveAccountToSupabase = async (acc: Account) => {
     if (!isSupabaseConfigured()) return;
@@ -178,6 +187,8 @@ export default function FinanzasPage() {
     e.preventDefault();
     if (!newAccName || !newAccBank || !newAccBalance) return;
 
+    const tenantId = user?.tenantId || "default";
+
     const newAcc: Account = {
       id: `a${accounts.length + 1}`,
       name: newAccName,
@@ -188,7 +199,7 @@ export default function FinanzasPage() {
 
     const updated = [...accounts, newAcc];
     setAccounts(updated);
-    localStorage.setItem("regiobiz_accounts", JSON.stringify(updated));
+    localStorage.setItem(`regiobiz_accounts_${tenantId}`, JSON.stringify(updated));
     saveAccountToSupabase(newAcc);
     setShowAddAccountModal(false);
 
@@ -212,6 +223,8 @@ export default function FinanzasPage() {
   const handleSaveEdit = (id: string) => {
     if (!editAccName || !editAccBank) return;
 
+    const tenantId = user?.tenantId || "default";
+
     const updated = accounts.map(a => {
       if (a.id === id) {
         return { ...a, name: editAccName, bankName: editAccBank };
@@ -220,7 +233,7 @@ export default function FinanzasPage() {
     });
 
     setAccounts(updated);
-    localStorage.setItem("regiobiz_accounts", JSON.stringify(updated));
+    localStorage.setItem(`regiobiz_accounts_${tenantId}`, JSON.stringify(updated));
     const updatedAcc = updated.find(a => a.id === id);
     if (updatedAcc) saveAccountToSupabase(updatedAcc);
     setEditingAccId(null);
@@ -239,9 +252,11 @@ export default function FinanzasPage() {
   const handleConfirmDelete = () => {
     if (!deleteTargetId) return;
 
+    const tenantId = user?.tenantId || "default";
+
     const updated = accounts.filter(a => a.id !== deleteTargetId);
     setAccounts(updated);
-    localStorage.setItem("regiobiz_accounts", JSON.stringify(updated));
+    localStorage.setItem(`regiobiz_accounts_${tenantId}`, JSON.stringify(updated));
     deleteAccountFromSupabase(deleteTargetId);
     
     // Limpiar selectores si usaban la cuenta eliminada
@@ -297,6 +312,8 @@ export default function FinanzasPage() {
     }
 
     // Actualizar balances
+    const tenantId = user?.tenantId || "default";
+
     const updatedAccounts = accounts.map(a => {
       if (a.id === sourceAcc.id) {
         return { ...a, balance: a.balance - amount };
@@ -308,7 +325,7 @@ export default function FinanzasPage() {
     });
 
     setAccounts(updatedAccounts);
-    localStorage.setItem("regiobiz_accounts", JSON.stringify(updatedAccounts));
+    localStorage.setItem(`regiobiz_accounts_${tenantId}`, JSON.stringify(updatedAccounts));
     const updatedSource = updatedAccounts.find(a => a.id === sourceAcc.id);
     const updatedDest = updatedAccounts.find(a => a.id === destAcc.id);
     if (updatedSource) saveAccountToSupabase(updatedSource);

@@ -47,7 +47,7 @@ interface CartItem {
 }
 
 export default function POSPage() {
-  const { exchangeRate, requestRemotePermission, hasPermission } = useApp();
+  const { user, exchangeRate, requestRemotePermission, hasPermission } = useApp();
   
   // Catálogo y Carrito
   const [catalog, setCatalog] = useState<Product[]>([]);
@@ -83,28 +83,31 @@ export default function POSPage() {
       };
       fetchSupabaseProductsForPOS();
     } else {
-      const saved = localStorage.getItem("regiobiz_products");
-      if (saved) {
-        try {
-          const parsed = JSON.parse(saved);
-          const mapped: Product[] = parsed.map((p: any) => ({
-            id: p.id,
-            code: p.code,
-            name: p.name,
-            category: p.category,
-            priceUsd: p.priceUsd,
-            taxCategory: p.taxCategory,
-            stock: p.stock
-          }));
-          setCatalog(mapped);
-        } catch (e) {
+      if (user) {
+        const tenantId = user.tenantId || "default";
+        const saved = localStorage.getItem(`regiobiz_products_${tenantId}`);
+        if (saved) {
+          try {
+            const parsed = JSON.parse(saved);
+            const mapped: Product[] = parsed.map((p: any) => ({
+              id: p.id,
+              code: p.code,
+              name: p.name,
+              category: p.category,
+              priceUsd: p.priceUsd,
+              taxCategory: p.taxCategory,
+              stock: p.stock
+            }));
+            setCatalog(mapped);
+          } catch (e) {
+            setCatalog([]);
+          }
+        } else {
           setCatalog([]);
         }
-      } else {
-        setCatalog([]);
       }
     }
-  }, []);
+  }, [user]);
   
   // Datos del Cliente (Requerimiento Fiscal)
   const [isFiscalMode, setIsFiscalMode] = useState(false);
@@ -906,7 +909,8 @@ export default function POSPage() {
       // Reincorporar productos al inventario
       if (scannedTicket && scannedTicket.items) {
         try {
-          const savedProducts = localStorage.getItem("regiobiz_products");
+          const tenantId = user?.tenantId || "default";
+          const savedProducts = localStorage.getItem(`regiobiz_products_${tenantId}`);
           if (savedProducts) {
             const products = JSON.parse(savedProducts);
             const updatedProducts = products.map((prod: any) => {
@@ -919,7 +923,7 @@ export default function POSPage() {
               }
               return prod;
             });
-            localStorage.setItem("regiobiz_products", JSON.stringify(updatedProducts));
+            localStorage.setItem(`regiobiz_products_${tenantId}`, JSON.stringify(updatedProducts));
 
             // Sincronizar con Supabase
             if (isSupabaseConfigured()) {
@@ -1641,8 +1645,10 @@ export default function POSPage() {
 
               <button
                 onClick={() => {
+                  const tenantId = user?.tenantId || "default";
+
                   // Guardar venta en el historial de ventas
-                  const savedHistory = localStorage.getItem("regiobiz_sales_history");
+                  const savedHistory = localStorage.getItem(`regiobiz_sales_history_${tenantId}`);
                   const history = savedHistory ? JSON.parse(savedHistory) : [];
                   const newRecord = {
                     id: generatedTicket.id,
@@ -1656,10 +1662,10 @@ export default function POSPage() {
                     payments: generatedTicket.payments
                   };
                   history.unshift(newRecord);
-                  localStorage.setItem("regiobiz_sales_history", JSON.stringify(history));
+                  localStorage.setItem(`regiobiz_sales_history_${tenantId}`, JSON.stringify(history));
 
                   // DESCONTAR STOCK DEL INVENTARIO LOCAL Y NUBE
-                  const savedProducts = localStorage.getItem("regiobiz_products");
+                  const savedProducts = localStorage.getItem(`regiobiz_products_${tenantId}`);
                   if (savedProducts) {
                     try {
                       const products = JSON.parse(savedProducts);
@@ -1673,7 +1679,7 @@ export default function POSPage() {
                         }
                         return prod;
                       });
-                      localStorage.setItem("regiobiz_products", JSON.stringify(updatedProducts));
+                      localStorage.setItem(`regiobiz_products_${tenantId}`, JSON.stringify(updatedProducts));
                       
                       // Sincronizar con Supabase si está disponible
                       if (isSupabaseConfigured()) {
@@ -1695,19 +1701,23 @@ export default function POSPage() {
                   }
 
                   // TRASLADO AUTOMÁTICO DE DINERO A CUENTAS BANCARIAS BIMONETARIAS
-                  // a1: Caja Fuerte USD (Efectivo $)
-                  // a2: Zelle / BofA (USD)
-                  // a3: Banesco Corriente (Bs. de Punto de Venta)
-                  // a4: Pago Móvil Mercantil (Bs. de Pago Móvil)
-                  // a5: Caja Chica Bs (Efectivo Bs)
-                  const savedAccounts = localStorage.getItem("regiobiz_accounts");
-                  const accounts = savedAccounts ? JSON.parse(savedAccounts) : [
-                    { id: "a1", name: "Caja Fuerte USD", bankName: "Efectivo Divisas", balance: 450.00, currency: "USD" },
-                    { id: "a2", name: "Zelle / BofA", bankName: "Bank of America", balance: 1100.00, currency: "USD" },
-                    { id: "a3", name: "Banesco Corriente", bankName: "Banco Nacional", balance: 4500.00, currency: "VES" },
-                    { id: "a4", name: "Pago Móvil Mercantil", bankName: "Mercantil Banco", balance: 6000.00, currency: "VES" },
-                    { id: "a5", name: "Caja Chica Bs", bankName: "Efectivo Bolívares", balance: 900.00, currency: "VES" }
-                  ];
+                  const savedAccounts = localStorage.getItem(`regiobiz_accounts_${tenantId}`);
+                  const localInitial = tenantId === "default"
+                    ? [
+                        { id: "a1", name: "Caja Fuerte USD", bankName: "Efectivo Divisas", balance: 450.00, currency: "USD" },
+                        { id: "a2", name: "Zelle / BofA", bankName: "Bank of America", balance: 1100.00, currency: "USD" },
+                        { id: "a3", name: "Banesco Corriente", bankName: "Banco Nacional", balance: 4500.00, currency: "VES" },
+                        { id: "a4", name: "Pago Móvil Mercantil", bankName: "Mercantil Banco", balance: 6000.00, currency: "VES" },
+                        { id: "a5", name: "Caja Chica Bs", bankName: "Efectivo Bolívares", balance: 900.00, currency: "VES" }
+                      ]
+                    : [
+                        { id: "a1", name: "Caja Fuerte USD", bankName: "Efectivo Divisas", balance: 0.00, currency: "USD" },
+                        { id: "a2", name: "Zelle / BofA", bankName: "Bank of America", balance: 0.00, currency: "USD" },
+                        { id: "a3", name: "Banesco Corriente", bankName: "Banco Nacional", balance: 0.00, currency: "VES" },
+                        { id: "a4", name: "Pago Móvil Mercantil", bankName: "Mercantil Banco", balance: 0.00, currency: "VES" },
+                        { id: "a5", name: "Caja Chica Bs", bankName: "Efectivo Bolívares", balance: 0.00, currency: "VES" }
+                      ];
+                  const accounts = savedAccounts ? JSON.parse(savedAccounts) : localInitial;
 
                   const updatedAccounts = accounts.map((acc: any) => {
                     if (acc.id === "a1" && generatedTicket.payments.cashUsd > 0) {
@@ -1727,7 +1737,7 @@ export default function POSPage() {
                     }
                     return acc;
                   });
-                  localStorage.setItem("regiobiz_accounts", JSON.stringify(updatedAccounts));
+                  localStorage.setItem(`regiobiz_accounts_${tenantId}`, JSON.stringify(updatedAccounts));
 
                   setShowTicketModal(false);
                   resetPOS();

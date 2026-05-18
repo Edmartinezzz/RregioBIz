@@ -23,6 +23,8 @@ export interface User {
   email: string;
   role: UserRole;
   avatarUrl?: string;
+  tenantId?: string;
+  tenantName?: string;
 }
 
 export interface RemoteRequest {
@@ -147,23 +149,87 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     return () => window.removeEventListener("regiobiz_realtime", handleRealtimeUpdate);
   }, []);
 
-  // Login simulado
+  // Login simulado y con soporte multi-tenant
   const login = (email: string, role: UserRole): boolean => {
-    const isCarlos = email.toLowerCase().includes("carlos");
-    const names = {
-      admin: isCarlos ? "Carlos Martínez" : "Directora Alejandra",
-      vendedor: "Cajera Valentina",
-      marketing: "Marketing Isabella",
-    };
+    const emailLower = email.toLowerCase();
+    const isCarlos = emailLower.includes("carlos") || emailLower === "carlosmtinez321@gmail.com";
+    
+    let resolvedTenantId = "default";
+    let resolvedTenantName = "RegioBIZ Demo";
+    let resolvedName = "";
+    let resolvedRole = role;
+
+    if (isCarlos) {
+      resolvedTenantId = "master";
+      resolvedTenantName = "RegioBIZ Master";
+      resolvedName = "Carlos Martínez";
+      resolvedRole = "admin";
+    } else {
+      // 1. Buscar si es Admin de una empresa creada
+      const savedTenants = localStorage.getItem("regiobiz_tenants");
+      const tenants = savedTenants ? JSON.parse(savedTenants) : [];
+      const matchedTenant = tenants.find((t: any) => t.adminEmail.toLowerCase() === emailLower);
+      
+      if (matchedTenant) {
+        resolvedTenantId = matchedTenant.id;
+        resolvedTenantName = matchedTenant.name;
+        resolvedName = matchedTenant.name; // El nombre del administrador es el nombre de la empresa
+        resolvedRole = "admin";
+      } else {
+        // 2. Buscar si es sub-usuario de alguna de las empresas
+        let foundSubuser: any = null;
+        let foundTenant: any = null;
+
+        for (const t of tenants) {
+          const savedSubs = localStorage.getItem(`regiobiz_subusers_${t.id}`);
+          if (savedSubs) {
+            const subs = JSON.parse(savedSubs);
+            const match = subs.find((s: any) => s.email.toLowerCase() === emailLower);
+            if (match) {
+              foundSubuser = match;
+              foundTenant = t;
+              break;
+            }
+          }
+        }
+
+        if (foundSubuser && foundTenant) {
+          resolvedTenantId = foundTenant.id;
+          resolvedTenantName = foundTenant.name;
+          resolvedName = foundSubuser.name;
+          resolvedRole = foundSubuser.role;
+        } else {
+          // 3. Fallback a los usuarios demo antiguos
+          if (emailLower.includes("alejandra")) {
+            resolvedTenantId = "default";
+            resolvedTenantName = "RegioBIZ Demo";
+            resolvedName = "Directora Alejandra";
+            resolvedRole = "admin";
+          } else if (emailLower.includes("valentina")) {
+            resolvedTenantId = "default";
+            resolvedTenantName = "RegioBIZ Demo";
+            resolvedName = "Cajera Valentina";
+            resolvedRole = "vendedor";
+          } else if (emailLower.includes("isabella")) {
+            resolvedTenantId = "default";
+            resolvedTenantName = "RegioBIZ Demo";
+            resolvedName = "Marketing Isabella";
+            resolvedRole = "marketing";
+          } else {
+            resolvedName = email.split("@")[0];
+          }
+        }
+      }
+    }
 
     const newUser: User = {
-      id: isCarlos ? "usr_carlos" : role === "admin" ? "usr_admin" : role === "vendedor" ? "usr_vendedor" : "usr_marketing",
-      name: names[role],
+      id: isCarlos ? "usr_carlos" : `usr_${Math.random().toString(36).substring(2, 9)}`,
+      name: resolvedName || "Usuario",
       email: email,
-      role: role,
-      avatarUrl: isCarlos 
-        ? "https://api.dicebear.com/7.x/adventurer/svg?seed=Carlos"
-        : `https://api.dicebear.com/7.x/adventurer/svg?seed=${names[role]}`,
+      role: resolvedRole,
+      tenantId: resolvedTenantId,
+      tenantName: resolvedTenantName,
+      avatarUrl: `https://api.dicebear.com/7.x/adventurer/svg?seed=${encodeURIComponent(resolvedName || "Usuario")}`,
     };
 
     setUser(newUser);

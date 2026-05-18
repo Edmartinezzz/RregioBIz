@@ -207,13 +207,15 @@ export default function DashboardPage() {
 
   // Recalcular métricas a partir del historial y el inventario real
   useEffect(() => {
+    const tenantId = user?.tenantId || "default";
+
     // 1. Cargar historial de ventas
-    const savedHistory = localStorage.getItem("regiobiz_sales_history");
+    const savedHistory = localStorage.getItem(`regiobiz_sales_history_${tenantId}`);
     const history = savedHistory ? JSON.parse(savedHistory) : [];
     
     // Calcular ventas totales
     const totalSales = history.reduce((sum: number, rec: any) => sum + Number(rec.totalUsd || 0), 0);
-    setSalesTodayUsd(totalSales || 1240.50); // Fallback estético inicial si está vacío
+    setSalesTodayUsd(totalSales || (tenantId === "default" ? 1240.50 : 0)); // Fallback estético inicial solo para la demo
 
     // Calcular productos más vendidos
     const productSalesMap: Record<string, { qty: number; price: number }> = {};
@@ -273,13 +275,13 @@ export default function DashboardPage() {
     setPaymentMethodsStats(sortedPayments);
 
     // 2. Cargar inventario real
-    const savedProducts = localStorage.getItem("regiobiz_products");
+    const savedProducts = localStorage.getItem(`regiobiz_products_${tenantId}`);
     const products = savedProducts ? JSON.parse(savedProducts) : [];
     setTotalProductsCount(products.length);
 
     // Calcular valor total del inventario
     const totalInventoryValue = products.reduce((sum: number, p: any) => sum + Number((p.priceUsd || 0) * (p.stock || 0)), 0);
-    setActiveStockValueUsd(totalInventoryValue || 8450.00); // Fallback estético inicial si está vacío
+    setActiveStockValueUsd(totalInventoryValue || (tenantId === "default" ? 8450.00 : 0)); // Fallback estético inicial solo para la demo
 
     // Filtrar productos con bajo inventario (stock <= 5)
     const lowStock = products

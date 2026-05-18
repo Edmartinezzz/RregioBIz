@@ -144,7 +144,7 @@ const mockInitialSales: SaleRecord[] = [
 ];
 
 export default function HistorialVentasPage() {
-  const { exchangeRate } = useApp();
+  const { user, exchangeRate } = useApp();
   const [sales, setSales] = useState<SaleRecord[]>([]);
   const [filteredSales, setFilteredSales] = useState<SaleRecord[]>([]);
   
@@ -156,14 +156,17 @@ export default function HistorialVentasPage() {
 
   // Cargar historial
   useEffect(() => {
-    const saved = localStorage.getItem("regiobiz_sales_history");
+    if (!user) return;
+    const tenantId = user.tenantId || "default";
+    const saved = localStorage.getItem(`regiobiz_sales_history_${tenantId}`);
     if (saved) {
       setSales(JSON.parse(saved));
     } else {
-      localStorage.setItem("regiobiz_sales_history", JSON.stringify(mockInitialSales));
-      setSales(mockInitialSales);
+      const initialData = tenantId === "default" ? mockInitialSales : [];
+      localStorage.setItem(`regiobiz_sales_history_${tenantId}`, JSON.stringify(initialData));
+      setSales(initialData);
     }
-  }, []);
+  }, [user]);
 
   // Parser de fecha seguro para evitar RangeError: Invalid time value
   const parseSafeDate = (dateStr: string): Date => {
@@ -242,7 +245,8 @@ export default function HistorialVentasPage() {
 
   // Recargar datos manual
   const handleReload = () => {
-    const saved = localStorage.getItem("regiobiz_sales_history");
+    const tenantId = user?.tenantId || "default";
+    const saved = localStorage.getItem(`regiobiz_sales_history_${tenantId}`);
     if (saved) {
       setSales(JSON.parse(saved));
     }
