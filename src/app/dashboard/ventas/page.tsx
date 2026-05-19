@@ -1667,6 +1667,26 @@ export default function POSPage() {
                   history.unshift(newRecord);
                   localStorage.setItem(`regiobiz_sales_history_${tenantId}`, JSON.stringify(history));
 
+                  // Sincronizar venta con Supabase
+                  if (isSupabaseConfigured()) {
+                    supabase!.from("sales_history").insert({
+                      id: generatedTicket.id,
+                      tenant_id: tenantId,
+                      invoice_num: generatedTicket.controlNumber,
+                      client_name: generatedTicket.client ? generatedTicket.client.name : "Consumidor Final",
+                      client_id: generatedTicket.client ? generatedTicket.client.id : "",
+                      total_usd: generatedTicket.totalUsd,
+                      total_bs: generatedTicket.totalBs,
+                      rate: 1, // You could pass the actual rate here
+                      payment_method: generatedTicket.payments.map((p:any) => p.method).join(", "),
+                      items: generatedTicket.items.map((it: any) => ({ name: it.product.name, qty: it.quantity, price: it.product.priceUsd, code: it.product.code })),
+                      seller_name: user?.name || "Vendedor",
+                      created_at: new Date(generatedTicket.date).toISOString()
+                    }).then(({ error }) => {
+                      if (error) console.error("Error guardando venta en Supabase:", error);
+                    });
+                  }
+
                   // DESCONTAR STOCK DEL INVENTARIO LOCAL Y NUBE
                   const savedProducts = localStorage.getItem(`regiobiz_products_${tenantId}`);
                   if (savedProducts) {

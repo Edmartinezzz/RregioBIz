@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
 import { useApp } from "@/lib/context/AppContext";
 import { useRouter } from "next/navigation";
+import { supabase, isSupabaseConfigured } from "@/lib/supabase";
 import jsQR from "jsqr";
 import { 
   TrendingUp, 
@@ -209,9 +210,43 @@ export default function DashboardPage() {
   useEffect(() => {
     const tenantId = user?.tenantId || "default";
 
-    // 1. Cargar historial de ventas
-    const savedHistory = localStorage.getItem(`regiobiz_sales_history_${tenantId}`);
-    const history = savedHistory ? JSON.parse(savedHistory) : [];
+    const fetchSalesAndCalculate = async () => {
+      let history: any[] = [];
+      
+      // 1. Cargar historial de ventas desde Supabase primero
+      if (isSupabaseConfigured()) {
+        try {
+          const { data, error } = await supabase!
+            .from("sales_history")
+            .select("*")
+            .eq("tenant_id", tenantId);
+            
+          if (!error && data) {
+            history = data.map((row: any) => ({
+              id: row.id,
+              totalUsd: parseFloat(row.total_usd),
+              items: row.items,
+              payments: { 
+                cashUsd: row.payment_method.includes("Efectivo USD") ? parseFloat(row.total_usd) : 0, 
+                zelle: row.payment_method.includes("Zelle") ? parseFloat(row.total_usd) : 0, 
+                posBs: row.payment_method.includes("Punto") ? parseFloat(row.total_bs) : 0, 
+                pagoMovil: row.payment_method.includes("Pago Móvil") ? parseFloat(row.total_bs) : 0, 
+                cashBs: row.payment_method.includes("Efectivo Bolívares") ? parseFloat(row.total_bs) : 0 
+              }
+            }));
+            // Update local cache
+            localStorage.setItem(`regiobiz_sales_history_${tenantId}`, JSON.stringify(history));
+          }
+        } catch (err) {
+          console.error("Error fetching sales history for dashboard:", err);
+        }
+      }
+      
+      // Fallback a localStorage si Supabase falla o está vacío y hay caché
+      if (history.length === 0) {
+        const savedHistory = localStorage.getItem(`regiobiz_sales_history_${tenantId}`);
+        history = savedHistory ? JSON.parse(savedHistory) : [];
+      }
     
     // Calcular ventas totales
     const totalSales = history.reduce((sum: number, rec: any) => sum + Number(rec.totalUsd || 0), 0);
@@ -269,28 +304,32 @@ export default function DashboardPage() {
       }
     });
 
-    const sortedPayments = Object.entries(paymentMap)
+    const pmStats = Object.entries(paymentMap)
       .map(([method, data]) => ({ method, count: data.count, totalUsd: data.totalUsd }))
       .sort((a, b) => b.totalUsd - a.totalUsd);
-    setPaymentMethodsStats(sortedPayments);
+    setPaymentMethodsStats(pmStats);
 
-    // 2. Cargar inventario real
+    // 2. Cargar inventario
     const savedProducts = localStorage.getItem(`regiobiz_products_${tenantId}`);
     const products = savedProducts ? JSON.parse(savedProducts) : [];
+    
     setTotalProductsCount(products.length);
+    
+    // Calcular valor total del stock
+    const stockValue = products.reduce((sum: number, prod: any) => sum + ((prod.stock || 0) * (prod.priceUsd || 0)), 0);
+    setActiveStockValueUsd(stockValue);
 
-    // Calcular valor total del inventario
-    const totalInventoryValue = products.reduce((sum: number, p: any) => sum + Number((p.priceUsd || 0) * (p.stock || 0)), 0);
-    setActiveStockValueUsd(totalInventoryValue || (tenantId === "default" ? 8450.00 : 0)); // Fallback estético inicial solo para la demo
-
-    // Filtrar productos con bajo inventario (stock <= 5)
+    // Calcular productos con bajo stock (< 5)
     const lowStock = products
-      .filter((p: any) => p.stock <= 5)
+      .filter((p: any) => p.stock > 0 && p.stock <= 5)
       .map((p: any) => ({ name: p.name, code: p.code, stock: p.stock }))
-      .sort((a: any, b: any) => a.stock - b.stock);
+      .sort((a: any, b: any) => a.stock - b.stock)
+      .slice(0, 5);
     setLowStockProducts(lowStock);
+    };
 
-  }, [exchangeRate]);
+    fetchSalesAndCalculate();
+  }, [user]);
   
   // Agregar logs en tiempo real cuando entren nuevas solicitudes
   useEffect(() => {

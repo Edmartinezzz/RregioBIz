@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect } from "react";
 import { useApp } from "@/lib/context/AppContext";
+import { supabase, isSupabaseConfigured } from "@/lib/supabase";
 import { 
   Calendar, 
   Printer, 
@@ -159,14 +160,56 @@ export default function HistorialVentasPage() {
   useEffect(() => {
     if (!user) return;
     const tenantId = user.tenantId || "default";
-    const saved = localStorage.getItem(`regiobiz_sales_history_${tenantId}`);
-    if (saved) {
-      setSales(JSON.parse(saved));
-    } else {
-      const initialData = tenantId === "default" ? mockInitialSales : [];
-      localStorage.setItem(`regiobiz_sales_history_${tenantId}`, JSON.stringify(initialData));
-      setSales(initialData);
-    }
+
+    const loadHistory = async () => {
+      // 1. Supabase (Fuente de verdad real)
+      if (isSupabaseConfigured()) {
+        try {
+          const { data, error } = await supabase!
+            .from("sales_history")
+            .select("*")
+            .eq("tenant_id", tenantId)
+            .order("created_at", { ascending: false });
+
+          if (!error && data) {
+            const mapped = data.map((row: any) => ({
+              id: row.id,
+              controlNumber: row.invoice_num,
+              date: row.created_at,
+              client: row.client_name,
+              itemsCount: row.items.reduce((sum: number, it: any) => sum + it.qty, 0),
+              totalUsd: parseFloat(row.total_usd),
+              totalBs: parseFloat(row.total_bs),
+              items: row.items,
+              payments: { 
+                cashUsd: row.payment_method.includes("Efectivo USD") ? parseFloat(row.total_usd) : 0, 
+                zelle: row.payment_method.includes("Zelle") ? parseFloat(row.total_usd) : 0, 
+                posBs: row.payment_method.includes("Punto") ? parseFloat(row.total_bs) : 0, 
+                pagoMovil: row.payment_method.includes("Pago Móvil") ? parseFloat(row.total_bs) : 0, 
+                cashBs: row.payment_method.includes("Efectivo Bolívares") ? parseFloat(row.total_bs) : 0 
+              }
+            }));
+            setSales(mapped);
+            localStorage.setItem(`regiobiz_sales_history_${tenantId}`, JSON.stringify(mapped));
+            return;
+          }
+        } catch (err) {
+          console.error("Error cargando historial de Supabase:", err);
+        }
+      }
+
+      // 2. Fallback local
+      const saved = localStorage.getItem(`regiobiz_sales_history_${tenantId}`);
+      if (saved) {
+        setSales(JSON.parse(saved));
+      } else {
+        const initialData = tenantId === "default" ? mockInitialSales : [];
+        localStorage.setItem(`regiobiz_sales_history_${tenantId}`, JSON.stringify(initialData));
+        setSales(initialData);
+      }
+    };
+
+    loadHistory();
   }, [user]);
 
   // Borrar todo el historial de ventas de esta empresa
@@ -184,9 +227,18 @@ export default function HistorialVentasPage() {
     }
 
     const tenantId = user.tenantId || "default";
+
+    // Borrar de Supabase
+    if (isSupabaseConfigured()) {
+      supabase!.from("sales_history").delete().eq("tenant_id", tenantId)
+        .then(({ error }) => {
+          if (error) console.error("Error borrando historial de Supabase:", error);
+        });
+    }
+
     setSales([]);
     localStorage.removeItem(`regiobiz_sales_history_${tenantId}`);
-    alert("¡Espectacular! Todo el historial de ventas de tu empresa ha sido borrado permanentemente.");
+    alert("¡Espectacular! Todo el historial de ventas de tu empresa ha sido borrado permanentemente de la nube y localmente.");
   };
 
   // Parser de fecha seguro para evitar RangeError: Invalid time value

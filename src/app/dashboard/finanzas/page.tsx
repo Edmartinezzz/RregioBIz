@@ -71,13 +71,39 @@ export default function FinanzasPage() {
     }
 
     if (isSupabaseConfigured()) {
-      const fetchSupabaseAccounts = async () => {
+      const fetchSupabaseData = async () => {
         try {
-          const { data, error } = await supabase!
+          // Fetch accounts
+          const { data: accData, error: accError } = await supabase!
             .from("financial_accounts")
             .select("*");
-          if (data && !error) {
-            const tenantAccounts = data.filter((acc: any) => acc.id.startsWith(tenantId + "_"));
+          
+          // Fetch sales history
+          const { data: salesData, error: salesError } = await supabase!
+            .from("sales_history")
+            .select("*")
+            .eq("tenant_id", tenantId)
+            .order("created_at", { ascending: false });
+
+          if (salesData && !salesError) {
+            const mappedSales = salesData.map((row: any) => ({
+              id: row.id,
+              totalUsd: parseFloat(row.total_usd),
+              items: row.items,
+              payments: { 
+                cashUsd: row.payment_method.includes("Efectivo USD") ? parseFloat(row.total_usd) : 0, 
+                zelle: row.payment_method.includes("Zelle") ? parseFloat(row.total_usd) : 0, 
+                posBs: row.payment_method.includes("Punto") ? parseFloat(row.total_bs) : 0, 
+                pagoMovil: row.payment_method.includes("Pago Móvil") ? parseFloat(row.total_bs) : 0, 
+                cashBs: row.payment_method.includes("Efectivo Bolívares") ? parseFloat(row.total_bs) : 0 
+              }
+            }));
+            setSalesHistory(mappedSales);
+            localStorage.setItem(`regiobiz_sales_history_${tenantId}`, JSON.stringify(mappedSales));
+          }
+
+          if (accData && !accError) {
+            const tenantAccounts = accData.filter((acc: any) => acc.id.startsWith(tenantId + "_"));
             
             // Si el inquilino no tiene cuentas en Supabase, inicializar sus cuentas por defecto
             if (tenantAccounts.length === 0) {
@@ -118,10 +144,10 @@ export default function FinanzasPage() {
             }
           }
         } catch (err) {
-          console.error("Error al cargar cuentas de Supabase:", err);
+          console.error("Error al cargar datos de Supabase:", err);
         }
       };
-      fetchSupabaseAccounts();
+      fetchSupabaseData();
     }
   }, [user]);
 
