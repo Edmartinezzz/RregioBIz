@@ -156,6 +156,49 @@ export default function FinanzasPage() {
       console.error("Error al eliminar cuenta en Supabase:", err);
     }
   };
+
+  // Restablecer todas las cuentas de esta empresa a saldo cero
+  const handleClearAccounts = async () => {
+    if (!user) return;
+    const confirmDelete = window.confirm(
+      "¿ESTÁS COMPLETAMENTE SEGURO? Esta acción restablecerá el balance de todas tus cuentas bancarias a $0.00 en Supabase y localmente. Esta acción no se puede deshacer."
+    );
+    if (!confirmDelete) return;
+
+    const confirmText = window.prompt("Por seguridad, escribe 'RESTABLECER FINANZAS' para confirmar:");
+    if (confirmText !== "RESTABLECER FINANZAS") {
+      alert("Confirmación incorrecta. No se restablecieron las cuentas.");
+      return;
+    }
+
+    const tenantId = user.tenantId || "default";
+    const resetAccs = accounts.map(a => ({ ...a, balance: 0 }));
+    setAccounts(resetAccs);
+    localStorage.setItem(`regiobiz_accounts_${tenantId}`, JSON.stringify(resetAccs));
+
+    if (isSupabaseConfigured()) {
+      try {
+        for (const acc of resetAccs) {
+          const isUsd = acc.currency === "USD";
+          await supabase!
+            .from("financial_accounts")
+            .upsert({
+              id: `${tenantId}_${acc.id}`,
+              name: acc.name,
+              bank: acc.bankName,
+              balance_usd: 0,
+              balance_bs: 0
+            });
+        }
+        alert("¡Espectacular! Todas tus cuentas bancarias se han restablecido a $0.00 en Supabase y localmente.");
+      } catch (err) {
+        console.error("Error al restablecer finanzas en Supabase:", err);
+        alert("Cuentas restablecidas localmente, pero hubo un error al sincronizar con Supabase.");
+      }
+    } else {
+      alert("¡Sandbox local restablecido! Todas tus cuentas financieras tienen balance cero ($0.00).");
+    }
+  };
   
   // Modales y Formularios
   const [showAddAccountModal, setShowAddAccountModal] = useState(false);
@@ -441,14 +484,29 @@ export default function FinanzasPage() {
           </p>
         </div>
 
-        {/* Botón Crear Cuenta */}
-        <button
-          onClick={() => setShowAddAccountModal(true)}
-          className="flex items-center gap-2 px-5 py-3 bg-gradient-to-r from-primary to-indigo-600 hover:from-primary/95 hover:to-indigo-600/95 text-white text-xs font-bold rounded-xl shadow-lg shadow-primary/20 hover:shadow-primary/30 transition-all cursor-pointer"
-        >
-          <Plus className="w-4 h-4" />
-          Crear Cuenta Bancaria
-        </button>
+        {/* Botones de Acción */}
+        <div className="flex flex-wrap items-center gap-3">
+          {/* Botón Crear Cuenta */}
+          <button
+            onClick={() => setShowAddAccountModal(true)}
+            className="flex items-center gap-2 px-5 py-3 bg-gradient-to-r from-primary to-indigo-600 hover:from-primary/95 hover:to-indigo-600/95 text-white text-xs font-bold rounded-xl shadow-lg shadow-primary/20 hover:shadow-primary/30 transition-all cursor-pointer select-none"
+          >
+            <Plus className="w-4 h-4" />
+            Crear Cuenta Bancaria
+          </button>
+
+          {/* Borrar Todo Finanzas */}
+          {user?.role === "admin" && (
+            <button
+              onClick={handleClearAccounts}
+              className="flex items-center gap-2 px-4 py-3 bg-red-50 border border-red-200 hover:bg-red-100 text-red-800 text-xs font-bold rounded-xl shadow-sm transition-all cursor-pointer select-none"
+              title="Restablecer Cuentas a Saldo Cero"
+            >
+              <Trash2 className="w-4.5 h-4.5 text-red-600 animate-pulse" />
+              Restablecer Finanzas
+            </button>
+          )}
+        </div>
       </div>
 
       {/* AVISO DE BLOQUEO DE SISTEMA (REPORTE Z EMITIDO) */}

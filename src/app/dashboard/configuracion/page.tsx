@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { useApp, UserRole, AppModule, PermissionActions } from "@/lib/context/AppContext";
 import { 
   Shield, 
@@ -14,8 +14,105 @@ import {
   Info,
   CheckCircle,
   HelpCircle,
-  Lock
+  Lock,
+  Trash2,
+  AlertTriangle,
+  Users,
+  Key,
+  Mail
 } from "lucide-react";
+import { supabase, isSupabaseConfigured } from "@/lib/supabase";
+
+// ─── Helper: quick count of sub-users ───────────────────────────────────────
+function SubUserSummary({ tenantId }: { tenantId: string }) {
+  const [subs, setSubs] = useState<any[]>([]);
+  useEffect(() => {
+    const saved = localStorage.getItem(`regiobiz_subusers_${tenantId}`);
+    if (saved) { try { setSubs(JSON.parse(saved)); } catch { setSubs([]); } }
+  }, [tenantId]);
+
+  if (subs.length === 0) {
+    return (
+      <p className="text-[11px] text-slate-400 italic">
+        No hay sub-usuarios creados todavía. Usa el botón de arriba para crear el primero.
+      </p>
+    );
+  }
+
+  return (
+    <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 pt-2">
+      {subs.map((s: any) => (
+        <div key={s.id} className="flex items-center gap-2 p-2.5 rounded-xl bg-slate-50 border border-border">
+          <img src={`https://api.dicebear.com/7.x/adventurer/svg?seed=${encodeURIComponent(s.name)}`} alt={s.name} className="w-7 h-7 rounded-full bg-white border border-border" />
+          <div className="overflow-hidden">
+            <p className="text-[10px] font-bold text-slate-900 truncate">{s.name}</p>
+            <span className={`text-[8px] font-bold uppercase ${ s.role === "vendedor" ? "text-emerald-600" : "text-indigo-600"}`}>{s.role}</span>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// ─── Helper: full directory of sub-users with credentials ───────────────────
+function SubUserDirectory({ tenantId, adminUser }: { tenantId: string; adminUser: any }) {
+  const [subs, setSubs] = useState<any[]>([]);
+  useEffect(() => {
+    const saved = localStorage.getItem(`regiobiz_subusers_${tenantId}`);
+    if (saved) { try { setSubs(JSON.parse(saved)); } catch { setSubs([]); } }
+  }, [tenantId]);
+
+  // Always show the company admin itself first
+  const adminCard = {
+    name: adminUser?.tenantName || adminUser?.name || "Administrador",
+    email: adminUser?.email || "",
+    role: "Admin Empresa",
+    pass: "Tu contraseña de acceso",
+    isAdmin: true,
+  };
+
+  if (subs.length === 0) {
+    return (
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+        <DirectoryCard key={adminCard.email} u={adminCard} isSelf={true} />
+        <div className="p-5 rounded-2xl border border-dashed border-border flex flex-col items-center justify-center text-center space-y-2 min-h-[140px]">
+          <Users className="w-8 h-8 text-slate-300" />
+          <p className="text-[10px] text-slate-400 font-semibold">Sin sub-usuarios<br />todavía</p>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+      <DirectoryCard key={adminCard.email} u={adminCard} isSelf={true} />
+      {subs.map((s: any) => (
+        <DirectoryCard key={s.id} u={{ name: s.name, email: s.email, role: s.role === "vendedor" ? "Vendedor / Cajero" : "Marketing", pass: s.password, isAdmin: false }} isSelf={false} />
+      ))}
+    </div>
+  );
+}
+
+function DirectoryCard({ u, isSelf }: { u: any; isSelf: boolean }) {
+  return (
+    <div className={`p-5 rounded-2xl border transition-all flex flex-col items-center text-center space-y-3 ${ isSelf ? "bg-emerald-50/50 border-emerald-300 ring-2 ring-emerald-500/10" : "bg-white border-border"}`}>
+      <img src={`https://api.dicebear.com/7.x/adventurer/svg?seed=${encodeURIComponent(u.name)}`} alt={u.name} className="w-14 h-14 rounded-full border border-border bg-white" />
+      <div>
+        <h4 className="text-xs font-bold text-slate-900">{u.name}</h4>
+        <p className="text-[10px] font-mono text-slate-500 mt-0.5">{u.email}</p>
+      </div>
+      <div className="space-y-2 w-full pt-1">
+        <span className={`inline-block text-[8px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wider ${ u.isAdmin ? "bg-emerald-100 text-emerald-800" : u.role.includes("Vend") ? "bg-sky-100 text-sky-800" : "bg-indigo-100 text-indigo-800"}`}>
+          {u.role}
+        </span>
+        <div className="p-2.5 rounded-xl bg-slate-50 border border-border text-[9px] font-mono text-slate-600 space-y-1 text-left">
+          <div className="flex items-center gap-1"><Key className="w-2.5 h-2.5" /><span className="font-bold">Clave:</span> {u.pass}</div>
+          <div><span className="font-bold">Estado:</span> <span className="text-emerald-600 font-bold">Activo</span></div>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 export default function ConfiguracionPage() {
   const { 
@@ -99,14 +196,199 @@ export default function ConfiguracionPage() {
     }
   };
 
-  // Solo permitir a la Directora ver esta interfaz
+  // Borrar todo el inventario de esta empresa
+  const handleClearInventory = async () => {
+    if (!user) return;
+    const confirmDelete = window.confirm(
+      "¿ESTÁS COMPLETAMENTE SEGURO? Esta acción eliminará permanentemente todo el inventario de tu empresa en Supabase y localmente. Esta acción no se puede deshacer."
+    );
+    if (!confirmDelete) return;
+
+    const confirmText = window.prompt("Por seguridad, escribe 'BORRAR INVENTARIO' para confirmar:");
+    if (confirmText !== "BORRAR INVENTARIO") {
+      alert("Confirmación incorrecta. No se borró el inventario.");
+      return;
+    }
+
+    const tenantId = user.tenantId || "default";
+    localStorage.removeItem(`regiobiz_products_${tenantId}`);
+
+    if (isSupabaseConfigured()) {
+      try {
+        const { error } = await supabase!
+          .from("products")
+          .delete()
+          .like("code", `${tenantId}_%`);
+        if (error) {
+          console.error("Error al borrar inventario en Supabase:", error);
+          alert("Error al sincronizar el borrado con Supabase.");
+        } else {
+          alert("¡Espectacular! Todo el inventario de tu empresa ha sido borrado permanentemente.");
+        }
+      } catch (err) {
+        console.error("Error en conexión de Supabase:", err);
+      }
+    } else {
+      alert("¡Sandbox local restablecido! Todo el inventario de tu empresa ha sido borrado.");
+    }
+  };
+
+  // Restablecer todas las cuentas financieras de esta empresa a saldo cero
+  const handleClearFinances = async () => {
+    if (!user) return;
+    const confirmDelete = window.confirm(
+      "¿ESTÁS COMPLETAMENTE SEGURO? Esta acción restablecerá el balance de todas tus cuentas bancarias a $0.00 en Supabase y localmente. Esta acción no se puede deshacer."
+    );
+    if (!confirmDelete) return;
+
+    const confirmText = window.prompt("Por seguridad, escribe 'RESTABLECER FINANZAS' para confirmar:");
+    if (confirmText !== "RESTABLECER FINANZAS") {
+      alert("Confirmación incorrecta. No se restablecieron las cuentas.");
+      return;
+    }
+
+    const tenantId = user.tenantId || "default";
+    const initialAccounts = [
+      { id: "a1", name: "Caja Fuerte USD", bankName: "Efectivo Divisas", balance: 0, currency: "USD" },
+      { id: "a2", name: "Zelle / BofA", bankName: "Bank of America", balance: 0, currency: "USD" },
+      { id: "a3", name: "Banesco Corriente", bankName: "Banco Nacional", balance: 0, currency: "VES" },
+      { id: "a4", name: "Pago Móvil Mercantil", bankName: "Mercantil Banco", balance: 0, currency: "VES" },
+      { id: "a5", name: "Caja Chica Bs", bankName: "Efectivo Bolívares", balance: 0, currency: "VES" },
+    ];
+    localStorage.setItem(`regiobiz_accounts_${tenantId}`, JSON.stringify(initialAccounts));
+
+    if (isSupabaseConfigured()) {
+      try {
+        for (const acc of initialAccounts) {
+          await supabase!
+            .from("financial_accounts")
+            .upsert({
+              id: `${tenantId}_${acc.id}`,
+              name: acc.name,
+              bank: acc.bankName,
+              balance_usd: 0,
+              balance_bs: 0
+            });
+        }
+        alert("¡Espectacular! Todas tus cuentas bancarias se han restablecido a $0.00 en Supabase y localmente.");
+      } catch (err) {
+        console.error("Error al restablecer finanzas en Supabase:", err);
+        alert("Cuentas restablecidas localmente, pero hubo un error al sincronizar con Supabase.");
+      }
+    } else {
+      alert("¡Sandbox local restablecido! Todas tus cuentas financieras tienen balance cero ($0.00).");
+    }
+  };
+
+  // Borrar todo el historial de ventas de esta empresa
+  const handleClearHistory = () => {
+    if (!user) return;
+    const confirmDelete = window.confirm(
+      "¿ESTÁS COMPLETAMENTE SEGURO? Esta acción eliminará permanentemente todo el historial de ventas de tu empresa localmente. Esta acción no se puede deshacer."
+    );
+    if (!confirmDelete) return;
+
+    const confirmText = window.prompt("Por seguridad, escribe 'BORRAR HISTORIAL' para confirmar:");
+    if (confirmText !== "BORRAR HISTORIAL") {
+      alert("Confirmación incorrecta. No se borró el historial.");
+      return;
+    }
+
+    const tenantId = user.tenantId || "default";
+    localStorage.removeItem(`regiobiz_sales_history_${tenantId}`);
+    alert("¡Espectacular! Todo el historial de ventas de tu empresa ha sido borrado permanentemente.");
+  };
+
+  // Borrado global de todos los datos de la empresa
+  const handleClearGlobal = async () => {
+    if (!user) return;
+    const confirmDelete = window.confirm(
+      "⚠ ⚠ ADVERTENCIA CRÍTICA: Estás a punto de borrar absolutamente TODOS los datos de tu empresa (Inventario, Finanzas y Ventas). Esta acción destruirá toda la información registrada para esta cuenta de forma permanente e irreversible. ¿Deseas continuar?"
+    );
+    if (!confirmDelete) return;
+
+    const tenantId = user.tenantId || "default";
+    const confirmName = window.prompt(
+      `Para validar tu responsabilidad y autorizar la destrucción de datos, escribe el ID de tu empresa ('${tenantId}'):`
+    );
+    if (confirmName !== tenantId) {
+      alert("ID de empresa incorrecto. Se canceló la destrucción global de datos.");
+      return;
+    }
+
+    const confirmDestruction = window.prompt(
+      "CONFIRMACIÓN FINAL: Escribe 'DESTRUIR TODO EL SISTEMA' para proceder con el borrado global:"
+    );
+    if (confirmDestruction !== "DESTRUIR TODO EL SISTEMA") {
+      alert("Confirmación incorrecta. No se borró ningún dato.");
+      return;
+    }
+
+    // 1. Borrar Historial de Ventas
+    localStorage.removeItem(`regiobiz_sales_history_${tenantId}`);
+
+    // 2. Borrar Inventario
+    localStorage.removeItem(`regiobiz_products_${tenantId}`);
+    if (isSupabaseConfigured()) {
+      try {
+        await supabase!.from("products").delete().like("code", `${tenantId}_%`);
+      } catch (e) {
+        console.error(e);
+      }
+    }
+
+    // 3. Borrar Finanzas
+    const initialAccounts = [
+      { id: "a1", name: "Caja Fuerte USD", bankName: "Efectivo Divisas", balance: 0, currency: "USD" },
+      { id: "a2", name: "Zelle / BofA", bankName: "Bank of America", balance: 0, currency: "USD" },
+      { id: "a3", name: "Banesco Corriente", bankName: "Banco Nacional", balance: 0, currency: "VES" },
+      { id: "a4", name: "Pago Móvil Mercantil", bankName: "Mercantil Banco", balance: 0, currency: "VES" },
+      { id: "a5", name: "Caja Chica Bs", bankName: "Efectivo Bolívares", balance: 0, currency: "VES" },
+    ];
+    localStorage.setItem(`regiobiz_accounts_${tenantId}`, JSON.stringify(initialAccounts));
+    if (isSupabaseConfigured()) {
+      try {
+        for (const acc of initialAccounts) {
+          await supabase!
+            .from("financial_accounts")
+            .upsert({
+              id: `${tenantId}_${acc.id}`,
+              name: acc.name,
+              bank: acc.bankName,
+              balance_usd: 0,
+              balance_bs: 0
+            });
+        }
+      } catch (e) {
+        console.error(e);
+      }
+    }
+
+    alert("🚨 ¡DESTRUCCIÓN GLOBAL COMPLETADA! Todos los datos de tu empresa han sido borrados permanentemente. El sistema se recargará para iniciar en blanco.");
+    window.location.reload();
+  };
+
+  // Guardia: master no debe ver esta página (tiene su propia consola SaaS)
+  if (user?.isMaster) {
+    return (
+      <div className="premium-card p-8 text-center space-y-4 max-w-md mx-auto mt-12 bg-white">
+        <Shield className="w-12 h-12 text-indigo-500 mx-auto" />
+        <h2 className="text-lg font-black text-slate-900 uppercase tracking-wider">Acceso Maestro</h2>
+        <p className="text-xs text-slate-600 font-bold">
+          Como Super-Usuario Master, tu panel de control es la <span className="text-primary">Consola SaaS</span>.
+        </p>
+      </div>
+    );
+  }
+
+  // Solo el admin de la empresa puede ver esta página
   if (user?.role !== "admin") {
     return (
       <div className="premium-card p-8 text-center space-y-4 max-w-md mx-auto mt-12 bg-white">
         <Lock className="w-12 h-12 text-red-500 mx-auto animate-pulse" />
         <h2 className="text-lg font-black text-slate-900 uppercase tracking-wider">Acceso Restringido</h2>
         <p className="text-xs text-slate-600 font-bold">
-          No tienes permisos suficientes para ver el panel de configuración global. Solo usuarios directores autorizados.
+          No tienes permisos suficientes para ver el panel de configuración. Solo el administrador de la empresa tiene acceso.
         </p>
       </div>
     );
@@ -140,67 +422,35 @@ export default function ConfiguracionPage() {
 
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-8">
         
-        {/* PANEL MATRIZ DE PERMISOS DINÁMICA (RBAC) */}
+        {/* INFO: permisos ahora son por sub-usuario */}
         <div className="premium-card p-6 xl:col-span-2 space-y-6 bg-white shadow-xl">
           <div className="border-b border-border pb-4">
             <h3 className="text-xs font-bold text-slate-900 uppercase tracking-widest flex items-center gap-2">
               <Shield className="w-5 h-5 text-primary" />
-              Matriz de Permisos Dinámica (RBAC)
+              Permisos de Sub-Usuarios (RBAC por persona)
             </h3>
             <p className="text-[11px] text-slate-500 mt-1">
-              Activa o desactiva switches. Los cambios ocultan o muestran de inmediato los menús a los sub-usuarios.
+              Los permisos ya no son globales por rol — ahora se configuran individualmente para cada sub-usuario desde su panel de gestión.
             </p>
           </div>
-
-          <div className="space-y-8 text-xs">
-            {(["vendedor", "marketing"] as UserRole[]).map((role) => (
-              <div key={role} className="space-y-4">
-                <div className="flex items-center gap-2 p-3 rounded-xl bg-emerald-50 border border-emerald-200">
-                  <span className="w-2.5 h-2.5 rounded-full bg-emerald-600" />
-                  <h4 className="text-xs font-black text-emerald-800 uppercase tracking-wider">
-                    Rol: {roleNames[role]}
-                  </h4>
-                </div>
-
-                <div className="overflow-x-auto">
-                  <table className="w-full text-left text-xs border-collapse">
-                    <thead>
-                      <tr className="border-b border-border text-slate-500 font-bold uppercase tracking-wider">
-                        <th className="pb-3 text-[10px] tracking-wider">Módulo</th>
-                        {actions.map(action => (
-                          <th key={action} className="pb-3 text-center capitalize text-[10px] tracking-wider">{action}</th>
-                        ))}
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-border">
-                      {(Object.keys(permissions[role]) as AppModule[]).map((module) => (
-                        <tr key={module} className="hover:bg-slate-50/50 transition-colors">
-                          <td className="py-4 font-black text-slate-800">{moduleNames[module]}</td>
-                          {actions.map(action => {
-                            const value = permissions[role][module][action];
-                            return (
-                              <td key={action} className="py-4 text-center">
-                                <button
-                                  onClick={() => updatePermission(role, module, action, !value)}
-                                  className="focus:outline-none transition-all scale-105 inline-block cursor-pointer"
-                                >
-                                  {value ? (
-                                    <ToggleRight className="w-9 h-6 text-primary" />
-                                  ) : (
-                                    <ToggleLeft className="w-9 h-6 text-slate-400" />
-                                  )}
-                                </button>
-                              </td>
-                            );
-                          })}
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            ))}
+          <div className="p-5 rounded-2xl bg-primary/5 border border-primary/20 space-y-3">
+            <p className="text-xs font-bold text-slate-700">
+              🛡️ Cada vendedor o usuario de marketing tiene su propia matriz de permisos que tú controlas. Puedes activar o desactivar módulos individuales por persona.
+            </p>
+            <p className="text-xs text-slate-500">
+              Ve a <strong className="text-primary">Sub-Usuarios</strong> en el menú lateral para crear usuarios y asignarles permisos granulares por módulo y acción (ver, crear, editar, eliminar).
+            </p>
+            <a
+              href="/dashboard/sub-usuarios"
+              className="inline-flex items-center gap-2 px-4 py-2.5 bg-primary text-white text-xs font-bold rounded-xl shadow-sm hover:bg-indigo-600 transition-all cursor-pointer"
+            >
+              <Users className="w-3.5 h-3.5" />
+              Ir a Gestión de Sub-Usuarios
+            </a>
           </div>
+
+          {/* Sub-user quick summary for this company */}
+          <SubUserSummary tenantId={user?.tenantId || "default"} />
         </div>
 
         {/* COLUMNA LATERAL: GESTIÓN DE TASA BCV Y SIMULADOR REALTIME */}
@@ -292,48 +542,108 @@ export default function ConfiguracionPage() {
 
       </div>
 
-      {/* DIRECTORIO DE USUARIOS DEL SISTEMA (EXCLUSIVO DIRECTORA / MASTER) */}
+      {/* DIRECTORIO DE SUB-USUARIOS ACTIVOS DE LA EMPRESA */}
       <div className="premium-card p-6 bg-white shadow-xl space-y-6">
         <div className="border-b border-border pb-4">
           <h3 className="text-xs font-bold text-slate-900 uppercase tracking-widest flex items-center gap-2">
             <Shield className="w-5 h-5 text-emerald-600" />
-            Directorio de Cuentas y Personal Activo
+            Directorio de Accesos — {user?.tenantName}
           </h3>
           <p className="text-[11px] text-slate-500 mt-1">
-            Listado de accesos autorizados y credenciales configuradas en el Active Directory de RegioBiz.
+            Vista rápida de los sub-usuarios creados para esta empresa. Gestiona sus credenciales y permisos desde <strong className="text-primary">Sub-Usuarios</strong>.
+          </p>
+        </div>
+        <SubUserDirectory tenantId={user?.tenantId || "default"} adminUser={user} />
+      </div>
+
+      {/* ZONA DE DESTRUCCIÓN Y CONTROL DE DATOS (ZONA DE PELIGRO) */}
+      <div className="premium-card p-6 bg-red-50/30 border border-red-200 shadow-xl space-y-6">
+        <div className="border-b border-red-200 pb-4">
+          <h3 className="text-xs font-bold text-red-700 uppercase tracking-widest flex items-center gap-2">
+            <AlertTriangle className="w-5 h-5 text-red-600 animate-pulse" />
+            Zona de Peligro Administrativa: Gestión y Borrado de Datos
+          </h3>
+          <p className="text-[11px] text-red-600 mt-1 font-semibold">
+            Atención: Estas acciones eliminan permanentemente los datos asociados a tu empresa ({user?.tenantId || "default"}). Utilizar bajo tu total responsabilidad.
           </p>
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-          {[
-            { name: "Carlos Martínez", email: "carlosmtinez321@gmail.com", role: "Super-Usuario Master", status: "Activo (Control Total)", pass: "2708", avatar: "https://api.dicebear.com/7.x/adventurer/svg?seed=Carlos" },
-            { name: "Directora Alejandra", email: "alejandra@regiobiz.com", role: "Directora (Admin)", status: "Activo", pass: "Clave corporativa (>= 6 car.)", avatar: "https://api.dicebear.com/7.x/adventurer/svg?seed=Directora%20Alejandra" },
-            { name: "Cajera Valentina", email: "valentina@regiobiz.com", role: "Cajera (Vendedor)", status: "Activo", pass: "Clave corporativa (>= 6 car.)", avatar: "https://api.dicebear.com/7.x/adventurer/svg?seed=Cajera%20Valentina" },
-            { name: "Marketing Isabella", email: "isabella@regiobiz.com", role: "Marketing (Hub Redes)", status: "Activo", pass: "Clave corporativa (>= 6 car.)", avatar: "https://api.dicebear.com/7.x/adventurer/svg?seed=Marketing%20Isabella" }
-          ].map((u) => (
-            <div key={u.email} className={`p-5 rounded-2xl border transition-all flex flex-col items-center text-center space-y-3 ${
-              u.email === user?.email ? "bg-emerald-50/50 border-emerald-300 ring-2 ring-emerald-500/10" : "bg-white border-border"
-            }`}>
-              <img src={u.avatar} alt={u.name} className="w-14 h-14 rounded-full border border-border bg-white" />
-              <div>
-                <h4 className="text-xs font-bold text-slate-900">{u.name}</h4>
-                <p className="text-[10px] font-mono text-slate-500 mt-0.5">{u.email}</p>
-              </div>
-              
-              <div className="space-y-2 w-full pt-1">
-                <span className={`inline-block text-[8px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wider ${
-                  u.role.includes("Master") ? "bg-indigo-100 text-indigo-800" : u.role.includes("Admin") ? "bg-emerald-100 text-emerald-800" : "bg-slate-100 text-slate-700"
-                }`}>
-                  {u.role}
-                </span>
-                
-                <div className="p-2.5 rounded-xl bg-slate-50 border border-border text-[9px] font-mono text-slate-600 space-y-1 text-left">
-                  <div><span className="font-bold">Clave:</span> {u.pass}</div>
-                  <div><span className="font-bold">Estado:</span> <span className="text-emerald-600 font-bold">{u.status}</span></div>
-                </div>
-              </div>
+          {/* Borrar Inventario */}
+          <div className="p-5 rounded-2xl border border-red-200 bg-white shadow-sm flex flex-col justify-between space-y-4">
+            <div>
+              <h4 className="text-xs font-bold text-slate-900 flex items-center gap-1.5">
+                <Trash2 className="w-4.5 h-4.5 text-red-600" />
+                Borrar Inventario
+              </h4>
+              <p className="text-[10px] text-slate-500 mt-2 font-medium">
+                Elimina permanentemente todo el catálogo de productos y stock de tu empresa de la base de datos de Supabase y caché local.
+              </p>
             </div>
-          ))}
+            <button
+              onClick={handleClearInventory}
+              className="w-full py-2.5 bg-red-50 hover:bg-red-100 border border-red-200 hover:border-red-300 text-red-700 font-bold rounded-xl text-xs transition-all cursor-pointer uppercase tracking-wider text-center"
+            >
+              Borrar Inventario
+            </button>
+          </div>
+
+          {/* Restablecer Finanzas */}
+          <div className="p-5 rounded-2xl border border-red-200 bg-white shadow-sm flex flex-col justify-between space-y-4">
+            <div>
+              <h4 className="text-xs font-bold text-slate-900 flex items-center gap-1.5">
+                <Trash2 className="w-4.5 h-4.5 text-red-600" />
+                Restablecer Finanzas
+              </h4>
+              <p className="text-[10px] text-slate-500 mt-2 font-medium">
+                Establece el balance de todas tus cuentas bimonetarias a $0.00 en Supabase y localmente, manteniendo la estructura de tus cuentas.
+              </p>
+            </div>
+            <button
+              onClick={handleClearFinances}
+              className="w-full py-2.5 bg-red-50 hover:bg-red-100 border border-red-200 hover:border-red-300 text-red-700 font-bold rounded-xl text-xs transition-all cursor-pointer uppercase tracking-wider text-center"
+            >
+              Restablecer Finanzas
+            </button>
+          </div>
+
+          {/* Borrar Historial de Ventas */}
+          <div className="p-5 rounded-2xl border border-red-200 bg-white shadow-sm flex flex-col justify-between space-y-4">
+            <div>
+              <h4 className="text-xs font-bold text-slate-900 flex items-center gap-1.5">
+                <Trash2 className="w-4.5 h-4.5 text-red-600" />
+                Historial de Ventas
+              </h4>
+              <p className="text-[10px] text-slate-500 mt-2 font-medium">
+                Elimina de forma permanente todo el historial de tickets, facturas fiscales y transacciones registradas localmente por tu empresa.
+              </p>
+            </div>
+            <button
+              onClick={handleClearHistory}
+              className="w-full py-2.5 bg-red-50 hover:bg-red-100 border border-red-200 hover:border-red-300 text-red-700 font-bold rounded-xl text-xs transition-all cursor-pointer uppercase tracking-wider text-center"
+            >
+              Borrar Historial
+            </button>
+          </div>
+
+          {/* DESTRUCCIÓN GLOBAL */}
+          <div className="p-5 rounded-2xl border-2 border-red-500 bg-red-50 flex flex-col justify-between space-y-4">
+            <div>
+              <h4 className="text-xs font-black text-red-700 flex items-center gap-1.5 uppercase tracking-wider">
+                <AlertTriangle className="w-4.5 h-4.5 text-red-700 animate-bounce" />
+                Destrucción Global
+              </h4>
+              <p className="text-[10px] text-red-600 mt-2 font-bold leading-relaxed">
+                ADVERTENCIA CRÍTICA: Esta opción borra TODO (Inventario, Finanzas y Ventas) de forma simultánea. Se requiere triple validación de seguridad.
+              </p>
+            </div>
+            <button
+              onClick={handleClearGlobal}
+              className="w-full py-3 bg-gradient-to-r from-red-600 to-red-700 hover:from-red-700 hover:to-red-800 text-white font-extrabold rounded-xl text-xs shadow-lg shadow-red-600/10 hover:shadow-red-600/20 transition-all cursor-pointer uppercase tracking-wider text-center"
+            >
+              Destruir Todo
+            </button>
+          </div>
         </div>
       </div>
 

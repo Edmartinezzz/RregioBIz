@@ -16,7 +16,8 @@ import {
   ChevronRight,
   RefreshCw,
   SlidersHorizontal,
-  ChevronDown
+  ChevronDown,
+  Trash2
 } from "lucide-react";
 
 interface SaleRecord {
@@ -167,6 +168,26 @@ export default function HistorialVentasPage() {
       setSales(initialData);
     }
   }, [user]);
+
+  // Borrar todo el historial de ventas de esta empresa
+  const handleClearSalesHistory = () => {
+    if (!user) return;
+    const confirmDelete = window.confirm(
+      "¿ESTÁS COMPLETAMENTE SEGURO? Esta acción eliminará permanentemente todo el historial de ventas de tu empresa localmente. Esta acción no se puede deshacer."
+    );
+    if (!confirmDelete) return;
+
+    const confirmText = window.prompt("Por seguridad, escribe 'BORRAR HISTORIAL' para confirmar:");
+    if (confirmText !== "BORRAR HISTORIAL") {
+      alert("Confirmación incorrecta. No se borró el historial.");
+      return;
+    }
+
+    const tenantId = user.tenantId || "default";
+    setSales([]);
+    localStorage.removeItem(`regiobiz_sales_history_${tenantId}`);
+    alert("¡Espectacular! Todo el historial de ventas de tu empresa ha sido borrado permanentemente.");
+  };
 
   // Parser de fecha seguro para evitar RangeError: Invalid time value
   const parseSafeDate = (dateStr: string): Date => {
@@ -615,6 +636,16 @@ export default function HistorialVentasPage() {
             <Printer className="w-4 h-4" />
             Generar Reporte PDF
           </button>
+
+          {user?.role === "admin" && (
+            <button
+              onClick={handleClearSalesHistory}
+              className="p-3 bg-red-50 border border-red-200 text-red-600 hover:text-red-700 hover:bg-red-100 rounded-xl transition-all cursor-pointer flex items-center justify-center"
+              title="Borrar Todo el Historial de Ventas"
+            >
+              <Trash2 className="w-4 h-4 text-red-600 animate-pulse" />
+            </button>
+          )}
         </div>
       </div>
 

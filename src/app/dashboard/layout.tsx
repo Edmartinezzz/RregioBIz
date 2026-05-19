@@ -16,6 +16,7 @@ import {
   X,
   TrendingUp,
   User,
+  Users,
   Shield,
   Bell,
   Check,
@@ -34,7 +35,8 @@ interface SidebarItem {
   module: AppModule;
 }
 
-const sidebarItems: SidebarItem[] = [
+// Items de negocio que solo ven las empresas (admins y sus sub-usuarios)
+const businessItems: SidebarItem[] = [
   { name: "Dashboard", href: "/dashboard", icon: TrendingUp, module: "ventas" },
   { name: "Punto de Venta (POS)", href: "/dashboard/ventas", icon: ShoppingBag, module: "ventas" },
   { name: "Ventas", href: "/dashboard/historial-ventas", icon: History, module: "ventas" },
@@ -43,6 +45,9 @@ const sidebarItems: SidebarItem[] = [
   { name: "Hub Redes Sociales", href: "/dashboard/redes-sociales", icon: Share2, module: "redes-sociales" },
   { name: "Configuración", href: "/dashboard/configuracion", icon: Settings, module: "configuracion" },
 ];
+
+// Alias para la lógica de permisos (sidebarItems se usa también en useEffect de rutas protegidas)
+const sidebarItems: SidebarItem[] = businessItems;
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   const {
@@ -113,12 +118,28 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     return null;
   }
 
-  // Filtrar los items de navegación según los permisos dinámicos del usuario
-  const allowedItems = sidebarItems.filter(item => hasPermission(item.module, "ver"));
-  const isCarlos = user?.email === "carlosmtinez" || user?.email?.includes("carlos");
-  const finalItems = isCarlos
-    ? [...allowedItems, { name: "Consola SaaS", href: "/dashboard/saas", icon: Shield, module: "configuracion" as AppModule }]
-    : allowedItems;
+  // ——— Lógica de items de navegación por tipo de usuario ———
+  const isMaster = user?.isMaster === true;
+  // Empresa admin = admin de un tenant real (no master)
+  const isEmpresaAdmin = user?.role === "admin" && !isMaster;
+
+  let finalItems: SidebarItem[];
+
+  if (isMaster) {
+    // Carlos solo ve la Consola SaaS + nada de datos de negocio
+    finalItems = [
+      { name: "Consola SaaS", href: "/dashboard/saas", icon: Shield, module: "configuracion" as AppModule },
+    ];
+  } else if (isEmpresaAdmin) {
+    // Admin de empresa: ve todo el negocio + gestión de sub-usuarios
+    finalItems = [
+      ...businessItems,
+      { name: "Sub-Usuarios", href: "/dashboard/sub-usuarios", icon: Users, module: "configuracion" as AppModule },
+    ];
+  } else {
+    // Sub-usuario (vendedor / marketing): solo lo que sus permisos le den
+    finalItems = businessItems.filter(item => hasPermission(item.module, "ver"));
+  }
 
   // Guardar tasa nueva
   const handleSaveRate = (e: React.FormEvent) => {
@@ -172,7 +193,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             <h4 className="text-xs font-semibold text-slate-900 truncate">{user.name}</h4>
             <span className="inline-flex items-center gap-1 mt-0.5 text-[9px] font-bold px-1.5 py-0.5 rounded-md bg-primary/10 border border-primary/20 text-primary uppercase tracking-wider">
               <Shield className="w-2.5 h-2.5" />
-              {user.role === "admin" ? "Directora" : user.role === "vendedor" ? "Vendedor" : "Marketing"}
+              {user.isMaster ? "Super Master" : user.role === "admin" ? "Admin Empresa" : user.role === "vendedor" ? "Vendedor" : "Marketing"}
             </span>
           </div>
         </div>

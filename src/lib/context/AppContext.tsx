@@ -25,6 +25,7 @@ export interface User {
   avatarUrl?: string;
   tenantId?: string;
   tenantName?: string;
+  isMaster?: boolean; // true solo para carlosmtinez321@gmail.com
 }
 
 export interface RemoteRequest {
@@ -198,6 +199,17 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           resolvedTenantName = foundTenant.name;
           resolvedName = foundSubuser.name;
           resolvedRole = foundSubuser.role;
+          
+          // Apply this sub-user's personal permission matrix if available
+          if (foundSubuser.permissions) {
+            // Merge into full PermissionMatrix so hasPermission works
+            const merged = {
+              ...defaultPermissions,
+              [foundSubuser.role]: foundSubuser.permissions,
+            };
+            setPermissions(merged);
+            localStorage.setItem("regiobiz_perms", JSON.stringify(merged));
+          }
         } else {
           // 3. Fallback a los usuarios demo antiguos
           if (emailLower.includes("alejandra")) {
@@ -230,6 +242,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       tenantId: resolvedTenantId,
       tenantName: resolvedTenantName,
       avatarUrl: `https://api.dicebear.com/7.x/adventurer/svg?seed=${encodeURIComponent(resolvedName || "Usuario")}`,
+      isMaster: isCarlos,
     };
 
     setUser(newUser);

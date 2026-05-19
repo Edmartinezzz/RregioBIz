@@ -18,7 +18,8 @@ import {
   ShieldCheck,
   Tag,
   Download,
-  Upload
+  Upload,
+  Trash2
 } from "lucide-react";
 
 interface ProductItem {
@@ -367,6 +368,49 @@ export default function InventarioPage() {
     }
   };
 
+  // Borrar todo el inventario de esta empresa
+  const handleClearInventory = async () => {
+    if (!user) return;
+    const confirmDelete = window.confirm(
+      "¿ESTÁS COMPLETAMENTE SEGURO? Esta acción eliminará permanentemente todo el inventario de tu empresa en Supabase y localmente. Esta acción no se puede deshacer."
+    );
+    if (!confirmDelete) return;
+
+    const confirmText = window.prompt("Por seguridad, escribe 'BORRAR INVENTARIO' para confirmar:");
+    if (confirmText !== "BORRAR INVENTARIO") {
+      alert("Confirmación incorrecta. No se borró el inventario.");
+      return;
+    }
+
+    const tenantId = user.tenantId || "default";
+    
+    // 1. Limpiar estado
+    setProducts([]);
+
+    // 2. Limpiar LocalStorage
+    localStorage.removeItem(`regiobiz_products_${tenantId}`);
+
+    // 3. Limpiar Supabase
+    if (isSupabaseConfigured()) {
+      try {
+        const { error } = await supabase!
+          .from("products")
+          .delete()
+          .like("code", `${tenantId}_%`);
+        if (error) {
+          console.error("Error al borrar inventario en Supabase:", error);
+          alert("Inventario local eliminado, pero hubo un error al sincronizar con Supabase.");
+        } else {
+          alert("¡Espectacular! Todo el inventario de tu empresa ha sido borrado permanentemente.");
+        }
+      } catch (err) {
+        console.error("Error en conexión de Supabase:", err);
+      }
+    } else {
+      alert("¡Sandbox local restablecido! Todo el inventario de tu empresa ha sido borrado.");
+    }
+  };
+
   // Filtrar productos por búsqueda y categoría
   const filteredProducts = products.filter(p => {
     const matchesSearch = p.name.toLowerCase().includes(searchTerm.toLowerCase()) || p.code.includes(searchTerm);
@@ -445,6 +489,18 @@ export default function InventarioPage() {
               <Plus className="w-4 h-4" />
               Añadir Producto
             </button>
+
+            {/* Borrar Todo el Inventario */}
+            {canSeeCosts && (
+              <button
+                onClick={handleClearInventory}
+                className="flex items-center gap-2 px-4 py-3 bg-red-50 border border-red-200 hover:bg-red-100 text-red-800 text-xs font-bold rounded-xl shadow-sm transition-all cursor-pointer select-none"
+                title="Borrar Todo el Inventario"
+              >
+                <Trash2 className="w-4.5 h-4.5 text-red-600 animate-pulse" />
+                Borrar Inventario
+              </button>
+            )}
           </div>
         )}
       </div>
