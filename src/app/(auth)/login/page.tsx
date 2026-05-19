@@ -44,7 +44,7 @@ export default function LoginPage() {
       return;
     }
 
-    if (isMaster && password !== "2708") {
+    if (isMaster && password !== "2002278") {
       setError("Contraseña incorrecta para el acceso de Super-Usuario");
       return;
     }
