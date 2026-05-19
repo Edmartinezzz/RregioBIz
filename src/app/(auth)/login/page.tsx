@@ -28,7 +28,7 @@ export default function LoginPage() {
     );
   }
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
 
@@ -51,28 +51,28 @@ export default function LoginPage() {
 
     setLoading(true);
 
-    // Determinar rol de forma inteligente según el correo corporativo (Active Directory Simulation)
-    let resolvedRole: UserRole = "vendedor";
+    // El rol real lo resuelve AppContext desde Supabase/localStorage
+    // Pasamos "vendedor" como rol provisional; AppContext lo sobreescribe
     const emailLower = email.toLowerCase();
-    
-    if (emailLower.includes("carlos") || emailLower.includes("alejandra") || emailLower.includes("admin") || emailLower.includes("directora")) {
+    let resolvedRole: UserRole = "vendedor";
+    if (emailLower.includes("carlos") || emailLower.includes("admin") || emailLower.includes("directora") || emailLower.includes("alejandra")) {
       resolvedRole = "admin";
-    } else if (emailLower.includes("isabella") || emailLower.includes("marketing") || emailLower.includes("promo")) {
+    } else if (emailLower.includes("marketing") || emailLower.includes("isabella") || emailLower.includes("promo")) {
       resolvedRole = "marketing";
-    } else if (emailLower.includes("valentina") || emailLower.includes("vendedor") || emailLower.includes("caja")) {
-      resolvedRole = "vendedor";
     }
 
-    // Simular un retardo de red corto para efectos visuales premium de autenticación SSL
-    setTimeout(() => {
-      const success = login(email, resolvedRole);
+    try {
+      const success = await login(email, resolvedRole);
       setLoading(false);
       if (success) {
         router.push("/dashboard");
       } else {
-        setError("Credenciales inválidas o cuenta inactiva");
+        setError("Credenciales inválidas o cuenta inactiva. Verifica tu correo y contraseña.");
       }
-    }, 1200);
+    } catch (err) {
+      setLoading(false);
+      setError("Error de conexión. Intenta de nuevo.");
+    }
   };
 
   return (

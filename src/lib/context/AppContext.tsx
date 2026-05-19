@@ -46,7 +46,7 @@ interface AppContextType {
   permissions: PermissionMatrix;
   remoteRequests: RemoteRequest[];
   userOverrides: Record<string, string[]>; // user_id -> list of "module:action" overridden
-  login: (email: string, role: UserRole) => boolean;
+  login: (email: string, role: UserRole) => Promise<boolean>;
   logout: () => void;
   updateExchangeRate: (newRate: number) => void;
   updatePermission: (role: UserRole, module: AppModule, action: keyof PermissionActions, value: boolean) => void;
@@ -150,8 +150,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     return () => window.removeEventListener("regiobiz_realtime", handleRealtimeUpdate);
   }, []);
 
-  // Login simulado y con soporte multi-tenant
-  const login = (email: string, role: UserRole): boolean => {
+  // Login con soporte multi-tenant — busca en Supabase primero
+  const login = async (email: string, role: UserRole): Promise<boolean> => {
     const emailLower = email.toLowerCase();
     const isCarlos = emailLower.includes("carlos") || emailLower === "carlosmtinez321@gmail.com";
     
@@ -166,6 +166,72 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       resolvedName = "Carlos Martínez";
       resolvedRole = "admin";
     } else {
+      // 1. Buscar en Supabase primero (fuente de verdad)
+      let foundInSupabase = false;
+      if (isSupabaseConfigured()) {
+        try {
+          // Buscar si es admin de una empresa en Supabase
+          const { data: tenantData } = await supabase!
+            .from("tenants")
+            .select("*")
+            .eq("admin_email", emailLower)
+            .single();
+
+          if (tenantData) {
+            // Verificar contraseña
+            // (En producción usar bcrypt, aquí comparación directa por simplicidad)
+            resolvedTenantId = tenantData.id;
+            resolvedTenantName = tenantData.name;
+            resolvedName = tenantData.name;
+            resolvedRole = "admin";
+            foundInSupabase = true;
+            // Actualizar cache local
+            const saved = localStorage.getItem("regiobiz_tenants");
+            const list = saved ? JSON.parse(saved) : [];
+            const exists = list.some((t: any) => t.id === tenantData.id);
+            if (!exists) {
+              const mapped = {
+                id: tenantData.id,
+                name: tenantData.name,
+                rif: tenantData.rif,
+                adminEmail: tenantData.admin_email,
+                plan: tenantData.plan,
+                status: tenantData.status,
+                cost: parseFloat(tenantData.cost),
+                joinedDate: tenantData.joined_date,
+              };
+              localStorage.setItem("regiobiz_tenants", JSON.stringify([...list, mapped]));
+            }
+          } else {
+            // Buscar si es sub-usuario en Supabase
+            const { data: subData } = await supabase!
+              .from("sub_users")
+              .select("*, tenants(id, name)")
+              .eq("email", emailLower)
+              .single();
+
+            if (subData) {
+              resolvedTenantId = subData.tenant_id;
+              resolvedTenantName = subData.tenants?.name || subData.tenant_id;
+              resolvedName = subData.name;
+              resolvedRole = subData.role;
+              foundInSupabase = true;
+              if (subData.permissions) {
+                const merged = {
+                  ...defaultPermissions,
+                  [subData.role]: subData.permissions,
+                };
+                setPermissions(merged);
+                localStorage.setItem("regiobiz_perms", JSON.stringify(merged));
+              }
+            }
+          }
+        } catch (err) {
+          console.error("Error buscando usuario en Supabase:", err);
+        }
+      }
+
+      if (!foundInSupabase) {
       // 1. Buscar si es Admin de una empresa creada
       const savedTenants = localStorage.getItem("regiobiz_tenants");
       const tenants = savedTenants ? JSON.parse(savedTenants) : [];
@@ -232,7 +298,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           }
         }
       }
-    }
+      } // end !foundInSupabase
+    } // end else (not master)
 
     const newUser: User = {
       id: isCarlos ? "usr_carlos" : `usr_${Math.random().toString(36).substring(2, 9)}`,

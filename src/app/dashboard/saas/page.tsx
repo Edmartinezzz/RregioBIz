@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect } from "react";
 import { useApp } from "@/lib/context/AppContext";
+import { supabase, isSupabaseConfigured } from "@/lib/supabase";
 import { 
   Building2, 
   Users, 
@@ -53,41 +54,110 @@ export default function SaasConsolePage() {
     enterprise: 199.00
   };
 
-  // Cargar y persistir inquilinos localmente
+  // ─── Cargar empresas: Supabase primero, localStorage como caché ───────────
   useEffect(() => {
-    const saved = localStorage.getItem("regiobiz_tenants");
-    if (saved) {
-      try {
-        const parsed = JSON.parse(saved) as Tenant[];
-        // Si contiene alguna de las empresas falsas iniciales, forzar limpieza
-        const hasMockData = parsed.some(t => t.id === "t1" || t.id === "t2" || t.id === "t3");
-        if (hasMockData) {
-          setTenants([]);
-          localStorage.setItem("regiobiz_tenants", JSON.stringify([]));
-        } else {
-          setTenants(parsed);
+    const loadTenants = async () => {
+      // 1. Intentar Supabase (fuente de verdad)
+      if (isSupabaseConfigured()) {
+        try {
+          const { data, error } = await supabase!
+            .from("tenants")
+            .select("*")
+            .order("created_at", { ascending: false });
+
+          if (!error && data) {
+            const mapped: Tenant[] = data.map((row: any) => ({
+              id: row.id,
+              name: row.name,
+              rif: row.rif,
+              adminEmail: row.admin_email,
+              plan: row.plan,
+              status: row.status,
+              cost: parseFloat(row.cost),
+              joinedDate: row.joined_date,
+            }));
+            setTenants(mapped);
+            // Actualizar cache local
+            localStorage.setItem("regiobiz_tenants", JSON.stringify(mapped));
+            return;
+          }
+        } catch (err) {
+          console.error("Error cargando empresas desde Supabase:", err);
         }
-      } catch (e) {
+      }
+
+      // 2. Fallback: localStorage
+      const saved = localStorage.getItem("regiobiz_tenants");
+      if (saved) {
+        try {
+          const parsed = JSON.parse(saved) as Tenant[];
+          const hasMockData = parsed.some(t => t.id === "t1" || t.id === "t2" || t.id === "t3");
+          if (hasMockData) {
+            setTenants([]);
+            localStorage.setItem("regiobiz_tenants", JSON.stringify([]));
+          } else {
+            setTenants(parsed);
+          }
+        } catch {
+          setTenants([]);
+        }
+      } else {
         setTenants([]);
       }
-    } else {
-      setTenants([]);
-      localStorage.setItem("regiobiz_tenants", JSON.stringify([]));
-    }
+    };
+
+    loadTenants();
   }, []);
 
+  // ─── Guardar en Supabase + localStorage ───────────────────────────────────
   const saveTenants = (newList: Tenant[]) => {
     setTenants(newList);
     localStorage.setItem("regiobiz_tenants", JSON.stringify(newList));
   };
 
+  const saveTenantToSupabase = async (t: Tenant, adminPass: string) => {
+    if (!isSupabaseConfigured()) return;
+    try {
+      await supabase!
+        .from("tenants")
+        .upsert({
+          id: t.id,
+          name: t.name,
+          rif: t.rif,
+          admin_email: t.adminEmail,
+          admin_pass: adminPass,
+          plan: t.plan,
+          status: t.status,
+          cost: t.cost,
+          joined_date: t.joinedDate,
+        });
+    } catch (err) {
+      console.error("Error guardando empresa en Supabase:", err);
+    }
+  };
+
+  const updateTenantStatusInSupabase = async (t: Tenant) => {
+    if (!isSupabaseConfigured()) return;
+    try {
+      await supabase!
+        .from("tenants")
+        .update({ status: t.status, cost: t.cost })
+        .eq("id", t.id);
+    } catch (err) {
+      console.error("Error actualizando estado en Supabase:", err);
+    }
+  };
+
   // Crear empresa & Admin principal
-  const handleCreateCompany = (e: React.FormEvent) => {
+  const handleCreateCompany = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!companyName || !rif || !adminEmail || !adminPass) return;
 
+    // ID único basado en timestamp para evitar colisiones
+    const newId = `t_${Date.now()}`;
+
     const newTenant: Tenant = {
-      id: `t${tenants.length + 1}`,
+      id: newId,
       name: companyName,
       rif: rif,
       adminEmail: adminEmail,
@@ -99,30 +169,18 @@ export default function SaasConsolePage() {
 
     const updated = [newTenant, ...tenants];
     saveTenants(updated);
-    
-    // Simular guardado de credenciales del nuevo administrador corporativo en el "Active Directory"
-    console.log(`[SaaS PROVISIONING] Creada cuenta administradora para empresa ${companyName}:`, {
-      email: adminEmail,
-      password: adminPass,
-      role: "admin",
-      permissions: "Total Control"
-    });
+
+    // Guardar en Supabase (persistencia real)
+    await saveTenantToSupabase(newTenant, adminPass);
 
     setSuccessMsg(`¡Empresa "${companyName}" dada de alta correctamente en la plataforma!`);
     setShowModal(false);
-
-    // Limpiar campos
-    setCompanyName("");
-    setRif("");
-    setAdminEmail("");
-    setAdminPass("");
-    setPlan("silver");
-
+    setCompanyName(""); setRif(""); setAdminEmail(""); setAdminPass(""); setPlan("silver");
     setTimeout(() => setSuccessMsg(""), 4000);
   };
 
   // Activar / Suspender empresa
-  const toggleTenantStatus = (id: string) => {
+  const toggleTenantStatus = async (id: string) => {
     const updated = tenants.map(t => {
       if (t.id === id) {
         const nextStatus = t.status === "active" ? "suspended" : "active";
@@ -135,6 +193,9 @@ export default function SaasConsolePage() {
       return t;
     });
     saveTenants(updated);
+    // Sincronizar cambio de estado en Supabase
+    const changed = updated.find(t => t.id === id);
+    if (changed) await updateTenantStatusInSupabase(changed);
   };
 
   // Seguridad estricta: Bloquear si no es Carlos Martínez (Master Super-Admin)
