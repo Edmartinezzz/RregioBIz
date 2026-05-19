@@ -336,6 +336,7 @@ export default function InventarioPage() {
           if (isSupabaseConfigured()) {
             setUploadProgress(`Sincronizando ${parsedProducts.length} productos con la base de datos de Supabase (por lotes)...`);
             let hasError = false;
+            let lastErrorMessage = "";
             const chunkSize = 500;
             
             for (let i = 0; i < dbRowsToSync.length; i += chunkSize) {
@@ -347,12 +348,13 @@ export default function InventarioPage() {
               if (error) {
                 console.error(`Error en chunk ${i}-${i + chunkSize}:`, error);
                 hasError = true;
+                lastErrorMessage = error.message || JSON.stringify(error);
                 break;
               }
             }
 
             if (hasError) {
-              alert("Importación local completada, pero hubo un error al sincronizar algunos lotes con Supabase. Intenta con un archivo más pequeño.");
+              alert(`Error al sincronizar con Supabase: ${lastErrorMessage}\n\nPor favor envíame una captura de este mensaje para arreglarlo.`);
             } else {
               alert(`¡Espectacular! Se importaron ${parsedProducts.length} productos con éxito y se subieron a Supabase.`);
             }
