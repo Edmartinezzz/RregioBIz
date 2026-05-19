@@ -23,26 +23,10 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 
-interface AuditLog {
-  id: string;
-  time: string;
-  user: string;
-  action: string;
-  status: "success" | "warning" | "info";
-}
-
-const initialLogs: AuditLog[] = [
-  { id: "log_1", time: "Hace 2 mins", user: "Cajera Valentina", action: "Solicitó descuento de 10% en venta #1094", status: "warning" },
-  { id: "log_2", time: "Hace 5 mins", user: "Directora Alejandra", action: "Actualizó tasa oficial BCV a 36.45 Bs.", status: "success" },
-  { id: "log_3", time: "Hace 15 mins", user: "Marketing Isabella", action: "Programó copy asistido por IA para Instagram", status: "info" },
-  { id: "log_4", time: "Hace 1 hora", user: "Cajera Valentina", action: "Cierre parcial de caja matutina", status: "success" },
-  { id: "log_5", time: "Hace 2 horas", user: "Directora Alejandra", action: "Modificó matriz de permisos dinámicos", status: "warning" },
-];
 
 export default function DashboardPage() {
   const router = useRouter();
   const { user, exchangeRate, remoteRequests, hasPermission, requestRemotePermission } = useApp();
-  const [logs, setLogs] = useState<AuditLog[]>(initialLogs);
 
   // Estados del Escáner QR de Dashboard
   const [showQRScanner, setShowQRScanner] = useState(false);
@@ -169,16 +153,6 @@ export default function DashboardPage() {
     setRefundProcessing(false);
     if (approved) {
       setRefundStatus("¡Devolución Autorizada con éxito! Caja e inventario ajustados.");
-      
-      // Registrar en el log de auditoría local en vivo
-      const newLog: AuditLog = {
-        id: `log_refund_${scannedTicket.id}`,
-        time: "Hace unos instantes",
-        user: user?.name || "Administrador",
-        action: `Procesó devolución autorizada de Ticket #${scannedTicket.id} por $${scannedTicket.usd.toFixed(2)}`,
-        status: "success"
-      };
-      setLogs(prev => [newLog, ...prev]);
       
       // Limpiar ticket
       setTimeout(() => {
@@ -331,25 +305,6 @@ export default function DashboardPage() {
     fetchSalesAndCalculate();
   }, [user]);
   
-  // Agregar logs en tiempo real cuando entren nuevas solicitudes
-  useEffect(() => {
-    if (remoteRequests.length > 0) {
-      const latestReq = remoteRequests[0];
-      const newLog: AuditLog = {
-        id: `log_new_${latestReq.id}`,
-        time: "Hace unos instantes",
-        user: latestReq.requesterName,
-        action: `Solicitó desbloqueo de ${latestReq.action} (${latestReq.details})`,
-        status: latestReq.status === "approved" ? "success" : latestReq.status === "rejected" ? "warning" : "info"
-      };
-
-      setLogs(prev => {
-        // Evitar duplicar logs
-        if (prev.some(l => l.id === newLog.id)) return prev;
-        return [newLog, ...prev.slice(0, 4)];
-      });
-    }
-  }, [remoteRequests]);
 
   return (
     <div className="space-y-8 animate-in fade-in duration-300">
@@ -597,90 +552,7 @@ export default function DashboardPage() {
 
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        
-        {/* PANEL DE REGISTRO DE AUDITORÍA EN VIVO (MÓDULO 1) */}
-        <div className="premium-card p-6 lg:col-span-2 space-y-6">
-          <div className="flex justify-between items-center border-b border-border pb-4">
-            <div>
-              <h3 className="text-base font-bold text-slate-900 uppercase tracking-wider">Historial de Auditoría Local</h3>
-              <p className="text-xs text-slate-500 mt-1">Logs de seguridad grabados en tiempo real (inmutable)</p>
-            </div>
-            <span className="flex items-center gap-1.5 text-[9px] font-bold px-2 py-0.5 rounded-full bg-muted border border-border text-slate-600 uppercase font-mono">
-              <Activity className="w-3 h-3 text-primary animate-pulse" />
-              Live Feed
-            </span>
-          </div>
 
-          <div className="space-y-4">
-            {logs.map((log) => (
-              <div 
-                key={log.id} 
-                className="flex items-start justify-between p-3.5 rounded-xl bg-muted/40 border border-border hover:bg-muted/60 transition-all gap-4"
-              >
-                <div className="flex items-start gap-3">
-                  <div className={`w-8 h-8 rounded-lg mt-0.5 flex items-center justify-center ${
-                    log.status === "success" 
-                      ? "bg-emerald-500/10 text-emerald-400" 
-                      : log.status === "warning" 
-                      ? "bg-amber-500/10 text-amber-400" 
-                      : "bg-blue-500/10 text-blue-400"
-                  }`}>
-                    <AlertCircle className="w-4 h-4" />
-                  </div>
-                  <div>
-                    <p className="text-xs font-bold text-slate-900">{log.user}</p>
-                    <p className="text-xs text-slate-500 mt-0.5">{log.action}</p>
-                  </div>
-                </div>
-                <span className="text-[10px] text-slate-500 whitespace-nowrap font-mono">{log.time}</span>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        {/* PANEL INFORMATIVO DEL NEGOCIO / RESUMEN DE COMPRA */}
-        <div className="premium-card p-6 flex flex-col justify-between">
-          <div className="space-y-4">
-            <h3 className="text-base font-bold text-slate-900 uppercase tracking-wider border-b border-border pb-4">
-              Estado de Roles & UX
-            </h3>
-            
-            <p className="text-xs text-slate-600 leading-relaxed">
-              Actualmente estás viendo la interfaz de **{user?.role === "admin" ? "Directora Alejandra (Administrador)" : user?.role === "vendedor" ? "Cajera Valentina (Ventas)" : "Marketing Isabella"}**. 
-            </p>
-
-            <div className="space-y-2 pt-2">
-              <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest block">Permisos Activos:</span>
-              <div className="space-y-1.5">
-                <div className="flex justify-between items-center text-xs p-2 rounded-lg bg-muted/40 border border-border">
-                  <span className="text-slate-600">Punto de Venta (POS)</span>
-                  <span className={`px-2 py-0.5 rounded text-[10px] font-extrabold ${hasPermission("ventas", "ver") ? "bg-emerald-500/10 text-emerald-400" : "bg-red-500/10 text-red-400"}`}>
-                    {hasPermission("ventas", "ver") ? "VISIBLE" : "OCULTO"}
-                  </span>
-                </div>
-                <div className="flex justify-between items-center text-xs p-2 rounded-lg bg-muted/40 border border-border">
-                  <span className="text-slate-600">Finanzas & Caja</span>
-                  <span className={`px-2 py-0.5 rounded text-[10px] font-extrabold ${hasPermission("finanzas", "ver") ? "bg-emerald-500/10 text-emerald-400" : "bg-red-500/10 text-red-400"}`}>
-                    {hasPermission("finanzas", "ver") ? "VISIBLE" : "OCULTO"}
-                  </span>
-                </div>
-                <div className="flex justify-between items-center text-xs p-2 rounded-lg bg-muted/40 border border-border">
-                  <span className="text-slate-600">Hub Redes Sociales</span>
-                  <span className={`px-2 py-0.5 rounded text-[10px] font-extrabold ${hasPermission("redes-sociales", "ver") ? "bg-emerald-500/10 text-emerald-400" : "bg-red-500/10 text-red-400"}`}>
-                    {hasPermission("redes-sociales", "ver") ? "VISIBLE" : "OCULTO"}
-                  </span>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <div className="mt-8 p-4 rounded-xl bg-muted/40 border border-border text-xs text-slate-600 flex items-start gap-2">
-            <span className="w-1.5 h-1.5 rounded-full bg-primary mt-1.5 animate-ping flex-shrink-0" />
-            <p>Puedes cambiar de usuario cerrando sesión y seleccionando otro perfil rápido en la pantalla de Login.</p>
-          </div>
-        </div>
-      </div>
       {/* DETALLES DE LA FACTURA ESCANEADA POR QR */}
       {scannedTicket && !showQRScanner && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 backdrop-blur-sm p-4 animate-in fade-in duration-200">
