@@ -203,7 +203,7 @@ export default function HistorialVentasPage() {
       if (saved) {
         setSales(JSON.parse(saved));
       } else {
-        const initialData = tenantId === "default" ? mockInitialSales : [];
+        const initialData: any[] = [];
         localStorage.setItem(`regiobiz_sales_history_${tenantId}`, JSON.stringify(initialData));
         setSales(initialData);
       }

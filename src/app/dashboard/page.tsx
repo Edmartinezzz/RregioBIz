@@ -250,7 +250,7 @@ export default function DashboardPage() {
     
     // Calcular ventas totales
     const totalSales = history.reduce((sum: number, rec: any) => sum + Number(rec.totalUsd || 0), 0);
-    setSalesTodayUsd(totalSales || (tenantId === "default" ? 1240.50 : 0)); // Fallback estético inicial solo para la demo
+    setSalesTodayUsd(totalSales || 0);
 
     // Calcular productos más vendidos
     const productSalesMap: Record<string, { qty: number; price: number }> = {};
