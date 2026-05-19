@@ -39,111 +39,6 @@ interface SaleRecord {
   };
 }
 
-const mockInitialSales: SaleRecord[] = [
-  {
-    id: "TKT-48116",
-    controlNumber: "CTRL-90021",
-    date: new Date().toISOString(), // Today
-    client: "Carlos Mendoza (V-18.492.301)",
-    itemsCount: 3,
-    totalUsd: 145.00,
-    totalBs: 5285.25,
-    items: [
-      { name: "Harina de Maíz Precocida 1Kg", qty: 5, price: 1.20 },
-      { name: "Aceite Vegetal Mezcla 1L", qty: 2, price: 3.50 },
-      { name: "Combo Parrillero Premium Regio", qty: 1, price: 132.00 }
-    ],
-    payments: {
-      cashUsd: 50.00,
-      zelle: 0,
-      posBs: 3460.25, // Bs portion
-      pagoMovil: 0,
-      cashBs: 0
-    }
-  },
-  {
-    id: "TKT-48115",
-    controlNumber: "CTRL-90020",
-    date: new Date(Date.now() - 3600000).toISOString(), // 1 hour ago
-    client: "María Corina (V-12.842.115)",
-    itemsCount: 2,
-    totalUsd: 65.50,
-    totalBs: 2387.48,
-    items: [
-      { name: "Arroz Entero Tipo I 1Kg", qty: 10, price: 1.10 },
-      { name: "Nutella Chocolate Spread 350g", qty: 5, price: 10.90 }
-    ],
-    payments: {
-      cashUsd: 0,
-      zelle: 65.50,
-      posBs: 0,
-      pagoMovil: 0,
-      cashBs: 0
-    }
-  },
-  {
-    id: "TKT-48114",
-    controlNumber: "CTRL-90019",
-    date: new Date(Date.now() - 12000000).toISOString(), // Today early
-    client: "Consumidor Final",
-    itemsCount: 1,
-    totalUsd: 18.00,
-    totalBs: 656.10,
-    items: [
-      { name: "Café Molido Gourmet 500g", qty: 3, price: 6.00 }
-    ],
-    payments: {
-      cashUsd: 10.00,
-      zelle: 0,
-      posBs: 0,
-      pagoMovil: 291.60,
-      cashBs: 0
-    }
-  },
-  // Yesterday
-  {
-    id: "TKT-48108",
-    controlNumber: "CTRL-90013",
-    date: new Date(Date.now() - 86400000).toISOString(),
-    client: "Pedro Pérez (V-9.302.405)",
-    itemsCount: 4,
-    totalUsd: 320.00,
-    totalBs: 11664.00,
-    items: [
-      { name: "Whisky Escocés 12 Años 750ml", qty: 2, price: 45.00 },
-      { name: "Queso Amarillo Madurado 1Kg", qty: 1, price: 12.00 },
-      { name: "Combo Charcutero Familiar", qty: 1, price: 218.00 }
-    ],
-    payments: {
-      cashUsd: 200.00,
-      zelle: 0,
-      posBs: 4374.00,
-      pagoMovil: 0,
-      cashBs: 0
-    }
-  },
-  // Last week
-  {
-    id: "TKT-48092",
-    controlNumber: "CTRL-89997",
-    date: new Date(Date.now() - 5 * 86400000).toISOString(),
-    client: "Sofía Delgado (V-24.301.291)",
-    itemsCount: 2,
-    totalUsd: 42.00,
-    totalBs: 1530.90,
-    items: [
-      { name: "Refresco Cola Negra 2L", qty: 12, price: 2.00 },
-      { name: "Mayonesa Clásica Doypack 500g", qty: 6, price: 3.00 }
-    ],
-    payments: {
-      cashUsd: 0,
-      zelle: 0,
-      posBs: 0,
-      pagoMovil: 1530.90,
-      cashBs: 0
-    }
-  }
-];
 
 export default function HistorialVentasPage() {
   const { user, exchangeRate } = useApp();
@@ -174,20 +69,30 @@ export default function HistorialVentasPage() {
           if (!error && data) {
             const mapped = data.map((row: any) => ({
               id: row.id,
-              controlNumber: row.invoice_num,
-              date: row.created_at,
-              client: row.client_name,
-              itemsCount: row.items.reduce((sum: number, it: any) => sum + it.qty, 0),
+              controlNumber: row.control_number || row.id,
+              date: row.date || row.created_at,
+              client: row.client_name
+                ? `${row.client_name}${row.client_doc ? ` (${row.client_doc})` : ""}`
+                : "Consumidor Final",
+              itemsCount: Array.isArray(row.items)
+                ? row.items.reduce((sum: number, it: any) => sum + (it.quantity || it.qty || 1), 0)
+                : 0,
               totalUsd: parseFloat(row.total_usd),
               totalBs: parseFloat(row.total_bs),
-              items: row.items,
-              payments: { 
-                cashUsd: row.payment_method.includes("Efectivo USD") ? parseFloat(row.total_usd) : 0, 
-                zelle: row.payment_method.includes("Zelle") ? parseFloat(row.total_usd) : 0, 
-                posBs: row.payment_method.includes("Punto") ? parseFloat(row.total_bs) : 0, 
-                pagoMovil: row.payment_method.includes("Pago Móvil") ? parseFloat(row.total_bs) : 0, 
-                cashBs: row.payment_method.includes("Efectivo Bolívares") ? parseFloat(row.total_bs) : 0 
-              }
+              items: Array.isArray(row.items)
+                ? row.items.map((it: any) => ({
+                    name: it.name,
+                    qty: it.quantity || it.qty || 1,
+                    price: it.price_usd || it.price || 0,
+                  }))
+                : [],
+              payments: {
+                cashUsd: parseFloat(row.pay_cash_usd) || 0,
+                zelle: parseFloat(row.pay_zelle) || 0,
+                posBs: parseFloat(row.pay_pos_bs) || 0,
+                pagoMovil: parseFloat(row.pay_pago_movil) || 0,
+                cashBs: parseFloat(row.pay_cash_bs) || 0,
+              },
             }));
             setSales(mapped);
             localStorage.setItem(`regiobiz_sales_history_${tenantId}`, JSON.stringify(mapped));

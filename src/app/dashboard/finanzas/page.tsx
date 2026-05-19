@@ -257,28 +257,36 @@ export default function FinanzasPage() {
   const [spoolerStatus, setSpoolerStatus] = useState<"idle" | "sending" | "printing" | "success">("idle");
   const [isSystemLocked, setIsSystemLocked] = useState(false);
 
-  // Totales acumulados simulados del día
-  const cashUsdSales = 450.00;
-  const zelleSales = 220.00;
-  const cashBsSales = 180.00; // USD equivalent
-  const pagoMovilSales = 240.00; // USD equivalent
-  const posSales = 150.00; // USD equivalent
-  const totalSalesUsd = cashUsdSales + zelleSales + cashBsSales + pagoMovilSales + posSales;
+  // ── Totales del día calculados desde el historial REAL ────────────────────
+  const todayStr = new Date().toISOString().split("T")[0]; // "YYYY-MM-DD"
+  const todaySales = salesHistory.filter((s: any) => {
+    const sDate = (s.created_at || s.date || "").slice(0, 10);
+    return sDate === todayStr;
+  });
 
-  // Impuestos acumulados
-  const ivaAcumuladoUsd = totalSalesUsd * 0.11;
-  const igtfAcumuladoUsd = cashUsdSales * 0.03;
+  const cashUsdSales   = todaySales.reduce((a: number, s: any) => a + (parseFloat(s.pay_cash_usd)  || s.payments?.cashUsd   || 0), 0);
+  const zelleSales     = todaySales.reduce((a: number, s: any) => a + (parseFloat(s.pay_zelle)     || s.payments?.zelle     || 0), 0);
+  const cashBsSales    = todaySales.reduce((a: number, s: any) => a + (parseFloat(s.pay_cash_bs)   || s.payments?.cashBs    || 0), 0) / exchangeRate;
+  const pagoMovilSales = todaySales.reduce((a: number, s: any) => a + (parseFloat(s.pay_pago_movil)|| s.payments?.pagoMovil || 0), 0) / exchangeRate;
+  const posSales       = todaySales.reduce((a: number, s: any) => a + (parseFloat(s.pay_pos_bs)   || s.payments?.posBs     || 0), 0) / exchangeRate;
+  const totalSalesUsd  = cashUsdSales + zelleSales + cashBsSales + pagoMovilSales + posSales;
 
-  // Flujo diario de simulación (7 días)
-  const baseChartData = [
-    { day: "Lun", usd: 320 },
-    { day: "Mar", usd: 410 },
-    { day: "Mié", usd: 280 },
-    { day: "Jue", usd: 520 },
-    { day: "Vie", usd: 610 },
-    { day: "Sáb", usd: 750 },
-    { day: "Dom", usd: 450 },
-  ];
+  // Impuestos acumulados del día
+  const ivaAcumuladoUsd  = todaySales.reduce((a: number, s: any) => a + (parseFloat(s.tax_usd)  || 0), 0);
+  const igtfAcumuladoUsd = todaySales.reduce((a: number, s: any) => a + (parseFloat(s.igtf_usd) || 0), 0);
+
+  // ── Gráfica: ventas de los últimos 7 días desde historial real ────────────
+  const dayLabels = ["Dom", "Lun", "Mar", "Mié", "Jue", "Vie", "Sáb"];
+  const baseChartData = Array.from({ length: 7 }, (_, i) => {
+    const d = new Date();
+    d.setDate(d.getDate() - (6 - i));
+    const dayKey = d.toISOString().split("T")[0];
+    const daySales = salesHistory.filter((s: any) =>
+      (s.created_at || s.date || "").slice(0, 10) === dayKey
+    );
+    const usd = daySales.reduce((a: number, s: any) => a + (parseFloat(s.total_usd) || 0), 0);
+    return { day: dayLabels[d.getDay()], usd: parseFloat(usd.toFixed(2)) };
+  });
 
   // Crear Cuenta Nueva
   const handleCreateAccount = (e: React.FormEvent) => {

@@ -177,6 +177,7 @@ export default function DashboardPage() {
   const [lowStockProducts, setLowStockProducts] = useState<{ name: string; code: string; stock: number }[]>([]);
   const [paymentMethodsStats, setPaymentMethodsStats] = useState<{ method: string; count: number; totalUsd: number }[]>([]);
   const [salesTodayUsd, setSalesTodayUsd] = useState(0);
+  const [salesGrowth, setSalesGrowth] = useState("0.0% vs ayer");
   const [activeStockValueUsd, setActiveStockValueUsd] = useState(0);
   const [totalProductsCount, setTotalProductsCount] = useState(0);
 
@@ -222,9 +223,34 @@ export default function DashboardPage() {
         history = savedHistory ? JSON.parse(savedHistory) : [];
       }
     
-    // Calcular ventas totales
-    const totalSales = history.reduce((sum: number, rec: any) => sum + Number(rec.totalUsd || 0), 0);
-    setSalesTodayUsd(totalSales || 0);
+    // Calcular ventas totales de HOY y AYER para el crecimiento
+    const todayStr = new Date().toISOString().split("T")[0];
+    const yesterdayDate = new Date();
+    yesterdayDate.setDate(yesterdayDate.getDate() - 1);
+    const yesterdayStr = yesterdayDate.toISOString().split("T")[0];
+
+    const todaySales = history.filter((rec: any) => {
+      const d = (rec.created_at || rec.date || "");
+      return d.slice(0, 10) === todayStr;
+    });
+    const yesterdaySales = history.filter((rec: any) => {
+      const d = (rec.created_at || rec.date || "");
+      return d.slice(0, 10) === yesterdayStr;
+    });
+
+    const totalSalesToday = todaySales.reduce((sum: number, rec: any) => sum + Number(rec.totalUsd || 0), 0);
+    const totalSalesYesterday = yesterdaySales.reduce((sum: number, rec: any) => sum + Number(rec.totalUsd || 0), 0);
+
+    setSalesTodayUsd(totalSalesToday || 0);
+
+    let growthStr = "0.0% vs ayer";
+    if (totalSalesYesterday > 0) {
+      const growthValue = ((totalSalesToday - totalSalesYesterday) / totalSalesYesterday) * 100;
+      growthStr = `${growthValue > 0 ? "+" : ""}${growthValue.toFixed(1)}% vs ayer`;
+    } else if (totalSalesToday > 0) {
+      growthStr = "+100% vs ayer";
+    }
+    setSalesGrowth(growthStr);
 
     // Calcular productos más vendidos
     const productSalesMap: Record<string, { qty: number; price: number }> = {};
@@ -369,8 +395,8 @@ export default function DashboardPage() {
           </div>
           <div className="mt-4 pt-4 border-t border-border flex items-center justify-between text-[10px] text-slate-500 font-mono">
             <span>Tasa BCV: {exchangeRate.toFixed(2)}</span>
-            <span className="text-usd flex items-center gap-0.5">
-              +12.4% vs ayer
+            <span className={`flex items-center gap-0.5 font-bold ${salesGrowth.startsWith("+") ? "text-emerald-500" : salesGrowth.startsWith("-") ? "text-red-500" : "text-slate-500"}`}>
+              {salesGrowth}
             </span>
           </div>
         </div>

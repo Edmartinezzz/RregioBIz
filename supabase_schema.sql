@@ -91,6 +91,64 @@ CREATE POLICY "Allow all for anon" ON public.sub_users
   FOR ALL USING (true) WITH CHECK (true);
 
 
+-- ─── 6. HISTORIAL DE VENTAS ──────────────────────────────────────────────────
+-- Registra cada transacción completada en el POS.
+-- Requerida por: /dashboard/ventas, /dashboard/historial-ventas,
+--                /dashboard/finanzas, /dashboard/page (métricas)
+CREATE TABLE IF NOT EXISTS public.sales_history (
+  id              TEXT PRIMARY KEY,           -- formato: "TKT-XXXXX"
+  tenant_id       TEXT NOT NULL,             -- FK lógico a tenants.id
+  control_number  TEXT,                      -- número de control fiscal CTRL-XXXXXXXX-XXXXX
+  date            TEXT NOT NULL,             -- fecha legible en español (toLocaleString)
+  created_at      TIMESTAMPTZ DEFAULT NOW(), -- para ordenar y filtrar por fecha real
+
+  -- Cliente (puede ser nulo = Consumidor Final)
+  client_doc      TEXT,                      -- RIF o Cédula
+  client_name     TEXT,                      -- Razón Social
+  client_address  TEXT,
+  client_phone    TEXT,
+
+  -- Totales bimonetarios
+  subtotal_usd    NUMERIC(12,4) DEFAULT 0,
+  tax_usd         NUMERIC(12,4) DEFAULT 0,   -- IVA 16%
+  igtf_usd        NUMERIC(12,4) DEFAULT 0,   -- IGTF 3% sobre efectivo USD
+  total_usd       NUMERIC(12,4) NOT NULL,
+  total_bs        NUMERIC(14,4) NOT NULL,
+  exchange_rate   NUMERIC(10,4) NOT NULL,    -- tasa BCV del momento de la venta
+
+  -- Desglose de métodos de pago
+  pay_cash_usd    NUMERIC(12,4) DEFAULT 0,
+  pay_zelle       NUMERIC(12,4) DEFAULT 0,
+  pay_cash_bs     NUMERIC(14,4) DEFAULT 0,
+  pay_pago_movil  NUMERIC(14,4) DEFAULT 0,
+  pay_pos_bs      NUMERIC(14,4) DEFAULT 0,
+
+  -- Campo de texto descriptivo del método (ej. "Zelle + Pago Móvil")
+  payment_method  TEXT DEFAULT '',
+
+  -- Ítems de la venta (array JSON para no normalizar en exceso)
+  -- Formato: [{ code, name, quantity, price_usd, tax_category }]
+  items           JSONB NOT NULL DEFAULT '[]',
+
+  -- Impresora Fiscal
+  fiscal_serial   TEXT,                      -- S/N de impresora SENIAT (si fue factura fiscal)
+  is_fiscal       BOOLEAN DEFAULT FALSE,
+
+  -- Datos del vendedor
+  seller_id       TEXT,                      -- user id del cajero
+  seller_name     TEXT
+);
+
+ALTER TABLE public.sales_history ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Allow all for anon" ON public.sales_history
+  FOR ALL USING (true) WITH CHECK (true);
+
+-- Índices para acelerar los filtros más frecuentes del historial
+CREATE INDEX IF NOT EXISTS idx_sales_history_tenant ON public.sales_history (tenant_id);
+CREATE INDEX IF NOT EXISTS idx_sales_history_created ON public.sales_history (created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_sales_history_tenant_created ON public.sales_history (tenant_id, created_at DESC);
+
+
 -- ─── FIN DEL SCHEMA ──────────────────────────────────────────────────────────
 -- Tras ejecutar esto en Supabase:
 -- 1. Ve a Settings > API en Supabase y copia tu URL y anon key
@@ -98,3 +156,8 @@ CREATE POLICY "Allow all for anon" ON public.sub_users
 --    NEXT_PUBLIC_SUPABASE_URL  = tu URL
 --    NEXT_PUBLIC_SUPABASE_ANON_KEY = tu anon key
 -- 3. Redeploy en Vercel para aplicar las variables
+--
+-- ⚠️  IMPORTANTE — Para ejecutar en una BD existente sin recrear tablas:
+--     Solo ejecuta el bloque de "sales_history" de arriba si ya tienes
+--     las demás tablas creadas. El CREATE TABLE IF NOT EXISTS es seguro.
+

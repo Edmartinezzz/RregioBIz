@@ -375,6 +375,76 @@ export default function POSPage() {
     setFiscalSerial("");
   };
 
+  // ─── Guardar venta en Supabase + localStorage ────────────────────────────
+  const saveSaleToHistory = async (ticket: any) => {
+    if (!user) return;
+    const tenantId = user.tenantId || "default";
+
+    // Construir el método de pago legible
+    const methods: string[] = [];
+    if (ticket.payments.cashUsd > 0) methods.push("Efectivo USD");
+    if (ticket.payments.zelle > 0) methods.push("Zelle");
+    if (ticket.payments.cashBs > 0) methods.push("Efectivo Bolívares");
+    if (ticket.payments.pagoMovil > 0) methods.push("Pago Móvil");
+    if (ticket.payments.posBs > 0) methods.push("Punto de Venta");
+    const paymentMethod = methods.join(" + ") || "Sin especificar";
+
+    const saleRecord = {
+      id: ticket.id,
+      tenant_id: tenantId,
+      control_number: ticket.controlNumber || null,
+      date: ticket.date,
+      created_at: new Date().toISOString(),
+      client_doc: ticket.client?.doc || null,
+      client_name: ticket.client?.name || null,
+      client_address: ticket.client?.address || null,
+      client_phone: ticket.client?.phone || null,
+      subtotal_usd: ticket.subtotalUsd,
+      tax_usd: ticket.taxUsd,
+      igtf_usd: ticket.igtfUsd,
+      total_usd: ticket.totalUsd,
+      total_bs: ticket.totalBs,
+      exchange_rate: exchangeRate,
+      pay_cash_usd: ticket.payments.cashUsd,
+      pay_zelle: ticket.payments.zelle,
+      pay_cash_bs: ticket.payments.cashBs,
+      pay_pago_movil: ticket.payments.pagoMovil,
+      pay_pos_bs: ticket.payments.posBs,
+      payment_method: paymentMethod,
+      items: ticket.items.map((i: any) => ({
+        code: i.product.code,
+        name: i.product.name,
+        quantity: i.quantity,
+        price_usd: i.product.priceUsd,
+        tax_category: i.product.taxCategory,
+      })),
+      fiscal_serial: ticket.serial || null,
+      is_fiscal: !!ticket.serial,
+      seller_id: user.id,
+      seller_name: user.name,
+    };
+
+    // 1. Guardar en Supabase
+    if (isSupabaseConfigured()) {
+      try {
+        const { error } = await supabase!
+          .from("sales_history")
+          .insert(saleRecord);
+        if (error) console.error("Error guardando venta en Supabase:", error);
+      } catch (err) {
+        console.error("Error de red al guardar venta:", err);
+      }
+    }
+
+    // 2. Guardar en localStorage (fuente de datos para modo sandbox + caché)
+    const localKey = `regiobiz_sales_history_${tenantId}`;
+    const existing = localStorage.getItem(localKey);
+    const history = existing ? JSON.parse(existing) : [];
+    // Insertar al inicio para que el historial más reciente aparezca primero
+    const updated = [saleRecord, ...history].slice(0, 500); // máx 500 entradas
+    localStorage.setItem(localKey, JSON.stringify(updated));
+  };
+
   // Procesar Venta / Impresión Fiscal
   const handleProcessSale = async (forceComplete = false) => {
     if (cart.length === 0) return;
@@ -434,8 +504,8 @@ export default function POSPage() {
         setFiscalSerial(serial);
         setSpoolerStatus("success");
         
-        // Registrar ticket generado para la vista de impresión
-        setGeneratedTicket({
+        // Registrar ticket generado para la vista de impresión y persistir
+        const newTicket = {
           id: `TKT-${Math.floor(10000 + Math.random() * 90000)}`,
           controlNumber: `CTRL-${new Date().toISOString().slice(0,10).replace(/-/g,'')}-${Math.floor(10000 + Math.random() * 90000)}`,
           date: new Date().toLocaleString(),
@@ -456,8 +526,9 @@ export default function POSPage() {
             posBs: payPosBs,
             zelle: payZelle
           }
-        });
-        
+        };
+        setGeneratedTicket(newTicket);
+        saveSaleToHistory(newTicket); // ← persistir en Supabase + localStorage
         setShowTicketModal(true);
       }, 1500);
     }, 1200);
@@ -505,10 +576,10 @@ export default function POSPage() {
           setFiscalSerial(serial);
           setSpoolerStatus("success");
           
-          setGeneratedTicket({
+          const quickTicket = {
             id: `TKT-${Math.floor(10000 + Math.random() * 90000)}`,
             controlNumber: `CTRL-${new Date().toISOString().slice(0,10).replace(/-/g,'')}-${Math.floor(10000 + Math.random() * 90000)}`,
-            date: new Date().toISOString(),
+            date: new Date().toLocaleString(),
             client: (clientDoc || clientName)
               ? { doc: clientDoc, name: clientName, address: clientAddress, phone: clientPhone }
               : null,
@@ -526,8 +597,9 @@ export default function POSPage() {
               posBs: finalPosBs,
               zelle: finalZelle
             }
-          });
-          
+          };
+          setGeneratedTicket(quickTicket);
+          saveSaleToHistory(quickTicket); // ← persistir en Supabase + localStorage
           setShowTicketModal(true);
         }, 1500);
       }, 1200);

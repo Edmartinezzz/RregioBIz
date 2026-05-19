@@ -151,14 +151,15 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   // Login con soporte multi-tenant — busca en Supabase primero
-  const login = async (email: string, role: UserRole): Promise<boolean> => {
+  const login = async (email: string, _providedRole: UserRole): Promise<boolean> => {
     const emailLower = email.toLowerCase();
     const isCarlos = emailLower.includes("carlos") || emailLower === "carlosmtinez321@gmail.com";
     
     let resolvedTenantId = "default";
     let resolvedTenantName = "RegioBIZ Demo";
     let resolvedName = "";
-    let resolvedRole = role;
+    // ─── IMPORTANTE: Siempre usamos null hasta que una fuente real lo confirme ───
+    let resolvedRole: UserRole | null = null;
 
     if (isCarlos) {
       resolvedTenantId = "master";
@@ -166,11 +167,11 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       resolvedName = "Carlos Martínez";
       resolvedRole = "admin";
     } else {
-      // 1. Buscar en Supabase primero (fuente de verdad)
       let foundInSupabase = false;
+
       if (isSupabaseConfigured()) {
         try {
-          // Buscar si es admin de una empresa en Supabase
+          // ── 1A. Buscar primero en tenants (admin de empresa) ──────────────
           const { data: tenantData } = await supabase!
             .from("tenants")
             .select("*")
@@ -178,14 +179,12 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
             .single();
 
           if (tenantData) {
-            // Verificar contraseña
-            // (En producción usar bcrypt, aquí comparación directa por simplicidad)
             resolvedTenantId = tenantData.id;
             resolvedTenantName = tenantData.name;
             resolvedName = tenantData.name;
-            resolvedRole = "admin";
+            resolvedRole = "admin"; // ← rol garantizado para admins de empresa
             foundInSupabase = true;
-            // Actualizar cache local
+            // Actualizar caché local con los datos frescos de Supabase
             const saved = localStorage.getItem("regiobiz_tenants");
             const list = saved ? JSON.parse(saved) : [];
             const exists = list.some((t: any) => t.id === tenantData.id);
@@ -202,8 +201,36 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
               };
               localStorage.setItem("regiobiz_tenants", JSON.stringify([...list, mapped]));
             }
-          } else {
-            // Buscar si es sub-usuario en Supabase
+          }
+        } catch (err) {
+          console.error("Error buscando tenant en Supabase:", err);
+        }
+      }
+
+      // ── 1B. Si Supabase no lo encontró como admin, revisar localStorage ANTES
+      //        de buscar en sub_users — puede ser una empresa recién registrada
+      //        cuya entrada de Supabase aún no llegó a la consulta ───────────
+      if (!foundInSupabase) {
+        const savedTenants = localStorage.getItem("regiobiz_tenants");
+        const localTenants = savedTenants ? JSON.parse(savedTenants) : [];
+        const matchedLocalTenant = localTenants.find(
+          (t: any) => t.adminEmail.toLowerCase() === emailLower
+        );
+
+        if (matchedLocalTenant) {
+          resolvedTenantId = matchedLocalTenant.id;
+          resolvedTenantName = matchedLocalTenant.name;
+          resolvedName = matchedLocalTenant.name;
+          resolvedRole = "admin"; // ← también garantizado aquí
+          foundInSupabase = true; // tratar como encontrado para no caer en demos
+        }
+      }
+
+      // ── 2. Solo si tampoco estaba en localStorage como tenant admin,
+      //        entonces buscar como sub-usuario ────────────────────────────
+      if (!foundInSupabase) {
+        if (isSupabaseConfigured()) {
+          try {
             const { data: subData } = await supabase!
               .from("sub_users")
               .select("*, tenants(id, name)")
@@ -214,7 +241,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
               resolvedTenantId = subData.tenant_id;
               resolvedTenantName = subData.tenants?.name || subData.tenant_id;
               resolvedName = subData.name;
-              resolvedRole = subData.role;
+              resolvedRole = subData.role as UserRole;
               foundInSupabase = true;
               if (subData.permissions) {
                 const merged = {
@@ -225,29 +252,21 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
                 localStorage.setItem("regiobiz_perms", JSON.stringify(merged));
               }
             }
+          } catch (err) {
+            console.error("Error buscando sub-usuario en Supabase:", err);
           }
-        } catch (err) {
-          console.error("Error buscando usuario en Supabase:", err);
         }
       }
 
+      // ── 3. Fallback a sub-usuarios en localStorage ────────────────────────
       if (!foundInSupabase) {
-      // 1. Buscar si es Admin de una empresa creada
-      const savedTenants = localStorage.getItem("regiobiz_tenants");
-      const tenants = savedTenants ? JSON.parse(savedTenants) : [];
-      const matchedTenant = tenants.find((t: any) => t.adminEmail.toLowerCase() === emailLower);
-      
-      if (matchedTenant) {
-        resolvedTenantId = matchedTenant.id;
-        resolvedTenantName = matchedTenant.name;
-        resolvedName = matchedTenant.name; // El nombre del administrador es el nombre de la empresa
-        resolvedRole = "admin";
-      } else {
-        // 2. Buscar si es sub-usuario de alguna de las empresas
+        const savedTenants = localStorage.getItem("regiobiz_tenants");
+        const localTenants = savedTenants ? JSON.parse(savedTenants) : [];
+
         let foundSubuser: any = null;
         let foundTenant: any = null;
 
-        for (const t of tenants) {
+        for (const t of localTenants) {
           const savedSubs = localStorage.getItem(`regiobiz_subusers_${t.id}`);
           if (savedSubs) {
             const subs = JSON.parse(savedSubs);
@@ -264,11 +283,9 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           resolvedTenantId = foundTenant.id;
           resolvedTenantName = foundTenant.name;
           resolvedName = foundSubuser.name;
-          resolvedRole = foundSubuser.role;
-          
-          // Apply this sub-user's personal permission matrix if available
+          resolvedRole = foundSubuser.role as UserRole;
+          foundInSupabase = true;
           if (foundSubuser.permissions) {
-            // Merge into full PermissionMatrix so hasPermission works
             const merged = {
               ...defaultPermissions,
               [foundSubuser.role]: foundSubuser.permissions,
@@ -276,30 +293,39 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
             setPermissions(merged);
             localStorage.setItem("regiobiz_perms", JSON.stringify(merged));
           }
-        } else {
-          // 3. Fallback a los usuarios demo antiguos
-          if (emailLower.includes("alejandra")) {
-            resolvedTenantId = "default";
-            resolvedTenantName = "RegioBIZ Demo";
-            resolvedName = "Directora Alejandra";
-            resolvedRole = "admin";
-          } else if (emailLower.includes("valentina")) {
-            resolvedTenantId = "default";
-            resolvedTenantName = "RegioBIZ Demo";
-            resolvedName = "Cajera Valentina";
-            resolvedRole = "vendedor";
-          } else if (emailLower.includes("isabella")) {
-            resolvedTenantId = "default";
-            resolvedTenantName = "RegioBIZ Demo";
-            resolvedName = "Marketing Isabella";
-            resolvedRole = "marketing";
-          } else {
-            resolvedName = email.split("@")[0];
-          }
         }
       }
-      } // end !foundInSupabase
+
+      // ── 4. Último recurso: cuentas demo hardcodeadas ─────────────────────
+      if (!foundInSupabase) {
+        if (emailLower.includes("alejandra")) {
+          resolvedTenantId = "default";
+          resolvedTenantName = "RegioBIZ Demo";
+          resolvedName = "Directora Alejandra";
+          resolvedRole = "admin";
+        } else if (emailLower.includes("valentina")) {
+          resolvedTenantId = "default";
+          resolvedTenantName = "RegioBIZ Demo";
+          resolvedName = "Cajera Valentina";
+          resolvedRole = "vendedor";
+        } else if (emailLower.includes("isabella")) {
+          resolvedTenantId = "default";
+          resolvedTenantName = "RegioBIZ Demo";
+          resolvedName = "Marketing Isabella";
+          resolvedRole = "marketing";
+        } else {
+          // No se encontró en ninguna fuente → rechazar login
+          console.warn("Usuario no encontrado en ninguna fuente:", emailLower);
+          return false;
+        }
+      }
     } // end else (not master)
+
+    // Seguridad: si por alguna razón el rol sigue siendo null, rechazar
+    if (resolvedRole === null) {
+      console.error("Rol no pudo resolverse para:", emailLower);
+      return false;
+    }
 
     const newUser: User = {
       id: isCarlos ? "usr_carlos" : `usr_${Math.random().toString(36).substring(2, 9)}`,

@@ -51,18 +51,11 @@ export default function LoginPage() {
 
     setLoading(true);
 
-    // El rol real lo resuelve AppContext desde Supabase/localStorage
-    // Pasamos "vendedor" como rol provisional; AppContext lo sobreescribe
-    const emailLower = email.toLowerCase();
-    let resolvedRole: UserRole = "vendedor";
-    if (emailLower.includes("carlos") || emailLower.includes("admin") || emailLower.includes("directora") || emailLower.includes("alejandra")) {
-      resolvedRole = "admin";
-    } else if (emailLower.includes("marketing") || emailLower.includes("isabella") || emailLower.includes("promo")) {
-      resolvedRole = "marketing";
-    }
-
+    // AppContext resuelve el rol real desde Supabase o localStorage.
+    // El parámetro de rol que pasamos aquí es ignorado por AppContext —
+    // solo existe para compatibilidad con la firma de la función.
     try {
-      const success = await login(email, resolvedRole);
+      const success = await login(email, "vendedor");
       setLoading(false);
       if (success) {
         router.push("/dashboard");

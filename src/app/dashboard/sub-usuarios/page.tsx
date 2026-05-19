@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect } from "react";
 import { useApp, UserRole, AppModule, PermissionActions } from "@/lib/context/AppContext";
+import { supabase, isSupabaseConfigured } from "@/lib/supabase";
 import {
   Users,
   Plus,
@@ -77,17 +78,71 @@ export default function SubUsuariosPage() {
   const tenantId = user?.tenantId || "default";
   const storageKey = `regiobiz_subusers_${tenantId}`;
 
-  // Load sub-users from localStorage
+  // ── Sync a Supabase (upsert un sub-usuario individual) ────────────────────
+  const syncSubUserToSupabase = async (su: SubUser) => {
+    if (!isSupabaseConfigured()) return;
+    try {
+      await supabase!
+        .from("sub_users")
+        .upsert({
+          id: su.id,
+          tenant_id: tenantId,
+          name: su.name,
+          email: su.email,
+          password: su.password,
+          role: su.role,
+          permissions: su.permissions,
+        });
+    } catch (err) {
+      console.error("Error sincronizando sub-usuario:", err);
+    }
+  };
+
+  const deleteSubUserFromSupabase = async (id: string) => {
+    if (!isSupabaseConfigured()) return;
+    try {
+      await supabase!.from("sub_users").delete().eq("id", id);
+    } catch (err) {
+      console.error("Error eliminando sub-usuario de Supabase:", err);
+    }
+  };
+
+  // Load sub-users — Supabase primero, localStorage como caché
   useEffect(() => {
     if (!user) return;
-    const saved = localStorage.getItem(storageKey);
-    if (saved) {
-      try {
-        setSubUsers(JSON.parse(saved));
-      } catch {
-        setSubUsers([]);
+
+    const load = async () => {
+      if (isSupabaseConfigured()) {
+        try {
+          const { data, error } = await supabase!
+            .from("sub_users")
+            .select("*")
+            .eq("tenant_id", tenantId);
+          if (!error && data) {
+            const mapped: SubUser[] = data.map((row: any) => ({
+              id: row.id,
+              name: row.name,
+              email: row.email,
+              password: row.password,
+              role: row.role as "vendedor" | "marketing",
+              permissions: row.permissions || defaultPermissions(row.role),
+            }));
+            setSubUsers(mapped);
+            localStorage.setItem(storageKey, JSON.stringify(mapped));
+            return;
+          }
+        } catch (err) {
+          console.error("Error cargando sub-usuarios de Supabase:", err);
+        }
       }
-    }
+      // Fallback localStorage
+      const saved = localStorage.getItem(storageKey);
+      if (saved) {
+        try { setSubUsers(JSON.parse(saved)); } catch { setSubUsers([]); }
+      }
+    };
+
+    load();
   }, [user]);
 
   const persist = (list: SubUser[]) => {
@@ -124,6 +179,7 @@ export default function SubUsuariosPage() {
 
     const updated = [created, ...subUsers];
     persist(updated);
+    syncSubUserToSupabase(created); // ← sync a Supabase
     setShowModal(false);
     setNewName(""); setNewEmail(""); setNewPassword(""); setNewRole("vendedor");
     showSuccess(`Sub-usuario "${created.name}" creado exitosamente.`);
@@ -133,6 +189,7 @@ export default function SubUsuariosPage() {
   const handleDelete = (id: string, name: string) => {
     if (!window.confirm(`¿Estás seguro de eliminar al usuario "${name}"? Esta acción no se puede deshacer.`)) return;
     persist(subUsers.filter(u => u.id !== id));
+    deleteSubUserFromSupabase(id); // ← eliminar de Supabase
     if (selectedUser?.id === id) setSelectedUser(null);
     showSuccess(`Usuario "${name}" eliminado.`);
   };
@@ -157,9 +214,12 @@ export default function SubUsuariosPage() {
       };
     });
     persist(updated);
-    // Update selected user view if it's open
+    // Sincronizar el usuario modificado a Supabase en tiempo real
     const fresh = updated.find(u => u.id === userId);
-    if (fresh) setSelectedUser(fresh);
+    if (fresh) {
+      setSelectedUser(fresh);
+      syncSubUserToSupabase(fresh); // ← sync permisos a Supabase
+    }
   };
 
   // Block access for non-empresa admins
