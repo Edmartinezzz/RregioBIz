@@ -1752,7 +1752,13 @@ export default function POSPage() {
                         total_usd: generatedTicket.totalUsd,
                         total_bs: generatedTicket.totalBs,
                         rate: exchangeRate || 1, 
-                        payment_method: generatedTicket.payments.map((p:any) => p.method).join(", "),
+                        payment_method: [
+                          generatedTicket.payments.cashUsd > 0 ? "Efectivo USD" : null,
+                          generatedTicket.payments.zelle > 0 ? "Transferencias" : null,
+                          generatedTicket.payments.cashBs > 0 ? "Efectivo Bs" : null,
+                          generatedTicket.payments.pagoMovil > 0 ? "Pago Móvil" : null,
+                          generatedTicket.payments.posBs > 0 ? "Punto Bs" : null
+                        ].filter(Boolean).join(", "),
                         items: generatedTicket.items.map((it: any) => ({ name: it.product.name, qty: it.quantity, price: it.product.priceUsd, code: it.product.code })),
                         seller_name: user?.name || "Vendedor",
                         created_at: new Date(generatedTicket.date).toISOString()
