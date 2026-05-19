@@ -63,20 +63,21 @@ export default function POSPage() {
       if (!user) return;
       const fetchSupabaseProductsForPOS = async () => {
         try {
+          const tenantId = user.tenantId || "default";
           const { data, error } = await supabase!
             .from("products")
-            .select("*");
+            .select("*")
+            .eq("tenant_id", tenantId);
+            
           if (data && !error) {
-            const tenantId = user.tenantId || "default";
-            const tenantProducts = data.filter((p: any) => p.code.startsWith(tenantId + "_"));
-            const mapped: Product[] = tenantProducts.map((p: any) => ({
-              id: `p_${p.code.replace(tenantId + "_", "")}`,
-              code: p.code.replace(tenantId + "_", ""),
+            const mapped: Product[] = data.map((p: any) => ({
+              id: p.id,
+              code: p.code,
               name: p.name,
-              category: p.category.charAt(0).toUpperCase() + p.category.slice(1),
-              priceUsd: Number(p.price_usd),
-              taxCategory: "exempt",
-              stock: Number(p.stock)
+              category: p.category ? p.category.charAt(0).toUpperCase() + p.category.slice(1) : "General",
+              priceUsd: Number(p.price_usd) || 0,
+              taxCategory: p.tax_category || "exempt",
+              stock: Number(p.stock) || 0
             }));
             setCatalog(mapped);
           }
