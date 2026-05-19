@@ -88,14 +88,24 @@ export default function FinanzasPage() {
           if (salesData && !salesError) {
             const mappedSales = salesData.map((row: any) => ({
               id: row.id,
-              totalUsd: parseFloat(row.total_usd),
+              date: row.date || row.created_at,
+              created_at: row.created_at,
+              totalUsd: parseFloat(row.total_usd) || 0,
+              totalBs: parseFloat(row.total_bs) || 0,
+              tax_usd: parseFloat(row.tax_usd) || 0,
+              igtf_usd: parseFloat(row.igtf_usd) || 0,
+              pay_cash_usd: parseFloat(row.pay_cash_usd) || 0,
+              pay_zelle: parseFloat(row.pay_zelle) || 0,
+              pay_pos_bs: parseFloat(row.pay_pos_bs) || 0,
+              pay_pago_movil: parseFloat(row.pay_pago_movil) || 0,
+              pay_cash_bs: parseFloat(row.pay_cash_bs) || 0,
               items: row.items,
               payments: { 
-                cashUsd: row.payment_method.includes("Efectivo USD") ? parseFloat(row.total_usd) : 0, 
-                zelle: row.payment_method.includes("Zelle") ? parseFloat(row.total_usd) : 0, 
-                posBs: row.payment_method.includes("Punto") ? parseFloat(row.total_bs) : 0, 
-                pagoMovil: row.payment_method.includes("Pago Móvil") ? parseFloat(row.total_bs) : 0, 
-                cashBs: row.payment_method.includes("Efectivo Bolívares") ? parseFloat(row.total_bs) : 0 
+                cashUsd: parseFloat(row.pay_cash_usd) || 0,
+                zelle: parseFloat(row.pay_zelle) || 0,
+                posBs: parseFloat(row.pay_pos_bs) || 0,
+                pagoMovil: parseFloat(row.pay_pago_movil) || 0,
+                cashBs: parseFloat(row.pay_cash_bs) || 0,
               }
             }));
             setSalesHistory(mappedSales);

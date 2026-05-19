@@ -14,8 +14,14 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "RegioBiz - ERP & POS Bimonetario Inteligente",
+  title: "RegioBiz - ERP & POS Bimonetario",
   description: "Sistema de gestión empresarial integral (POS, Inventario, Finanzas y Redes Sociales) optimizado para comercios en Venezuela.",
+  manifest: "/manifest.json",
+  themeColor: "#10b981",
+  icons: {
+    icon: "/logo.png",
+    apple: "/logo.png",
+  },
 };
 
 export default function RootLayout({

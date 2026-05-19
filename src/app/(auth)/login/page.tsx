@@ -128,11 +128,13 @@ export default function LoginPage() {
         
         <div className="w-full max-w-sm space-y-6">
           
-          {/* Cabecera / Branding sin logotipo de caja, con tipografía premium */}
-          <div className="text-center md:text-left flex flex-col items-center md:items-start mb-2">
-            <h1 className="text-4xl tracking-widest text-slate-900 font-light select-none">
-              Regio<span className="font-extrabold text-primary">Biz</span>
-            </h1>
+          {/* Cabecera / Branding con Logo */}
+          <div className="text-center md:text-left flex flex-col items-center md:items-start mb-4">
+            <img 
+              src="/logo.png" 
+              alt="RegioBiz Logo" 
+              className="h-16 w-auto object-contain mb-1"
+            />
             <p className="text-[9px] text-slate-500 font-bold mt-1.5 uppercase tracking-[0.2em]">
               Sistema Central de Ventas e Inventario
             </p>

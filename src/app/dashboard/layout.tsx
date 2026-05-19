@@ -171,13 +171,12 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       {/* SIDEBAR PARA ESCRITORIO */}
       <aside className="hidden md:flex flex-col w-64 bg-sidebar border-r border-border flex-shrink-0">
         <div className="h-20 flex items-center gap-3 px-6 border-b border-border">
-          <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-primary to-indigo-600 flex items-center justify-center shadow-lg shadow-primary/20">
-            <span className="text-sm font-bold text-white tracking-wider">RB</span>
-          </div>
-          <span className="text-lg font-bold tracking-tight text-slate-900">
-            RegioBiz
-          </span>
-          <span className="text-[9px] px-2 py-0.5 rounded-full bg-muted border border-border text-slate-500 font-mono">
+          <img 
+            src="/logo.png" 
+            alt="RegioBiz Logo" 
+            className="h-8 w-auto object-contain"
+          />
+          <span className="text-[9px] px-2 py-0.5 rounded-full bg-muted border border-border text-slate-500 font-mono mt-1">
             v1.0
           </span>
         </div>
@@ -237,7 +236,11 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         <div className="fixed inset-0 z-50 flex md:hidden bg-black/60 backdrop-blur-sm">
           <aside className="w-64 bg-sidebar flex flex-col h-full animate-in slide-in-from-left duration-200">
             <div className="h-20 flex items-center justify-between px-6 border-b border-border">
-              <span className="text-lg font-bold tracking-tight text-slate-900">RegioBiz</span>
+              <img 
+                src="/logo.png" 
+                alt="RegioBiz Logo" 
+                className="h-8 w-auto object-contain"
+              />
               <button onClick={() => setSidebarOpen(false)} className="text-slate-600 hover:text-primary">
                 <X className="w-5 h-5" />
               </button>
