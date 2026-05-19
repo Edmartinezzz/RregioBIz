@@ -50,13 +50,12 @@ export default function InventarioPage() {
         try {
           const { data, error } = await supabase!
             .from("products")
-            .select("*");
+            .select("*")
+            .eq("tenant_id", tenantId);
           if (data && !error) {
-            // Filtrar productos por el inquilino actual
-            const tenantProducts = data.filter((p: any) => p.code.startsWith(tenantId + "_"));
-            const mapped: ProductItem[] = tenantProducts.map((p: any) => ({
-              id: `p_${p.code.replace(tenantId + "_", "")}`,
-              code: p.code.replace(tenantId + "_", ""),
+            const mapped: ProductItem[] = data.map((p: any) => ({
+              id: p.id,
+              code: p.code,
               name: p.name,
               category: p.category.charAt(0).toUpperCase() + p.category.slice(1),
               costUsd: Number(p.cost_usd),
@@ -134,12 +133,15 @@ export default function InventarioPage() {
         await supabase!
           .from("products")
           .upsert({
-            code: `${tenantId}_${newCode}`,
+            id: `${tenantId}_${newCode}`,
+            tenant_id: tenantId,
+            code: newCode,
             name: newName,
             category: newCategory.toLowerCase(),
             cost_usd: parseFloat(newCost) || 0,
             price_usd: parseFloat(newPrice),
-            stock: parseInt(newStock)
+            stock: parseInt(newStock),
+            tax_category: newTax
           });
       } catch (err) {
         console.error("Error al sincronizar producto con Supabase:", err);
@@ -312,12 +314,15 @@ export default function InventarioPage() {
 
             const tenantId = user?.tenantId || "default";
             dbRowsToSync.push({
-              code: `${tenantId}_${code}`,
+              id: `${tenantId}_${code}`,
+              tenant_id: tenantId,
+              code,
               name,
               category: category.toLowerCase(),
               cost_usd: isNaN(cost) ? 0 : cost,
               price_usd: isNaN(price) ? 0 : price,
-              stock: isNaN(stock) ? 0 : stock
+              stock: isNaN(stock) ? 0 : stock,
+              tax_category: "exempt"
             });
           }
         }
@@ -332,7 +337,7 @@ export default function InventarioPage() {
             setUploadProgress(`Sincronizando ${parsedProducts.length} productos con la base de datos de Supabase...`);
             const { error } = await supabase!
               .from("products")
-              .upsert(dbRowsToSync, { onConflict: "code" });
+              .upsert(dbRowsToSync, { onConflict: "id" });
             if (error) {
               console.error("Error al subir productos en lote a Supabase:", error);
               alert("Importación local completada, pero hubo un error al sincronizar con Supabase.");
