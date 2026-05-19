@@ -1761,7 +1761,7 @@ export default function POSPage() {
                         ].filter(Boolean).join(", "),
                         items: generatedTicket.items.map((it: any) => ({ name: it.product.name, qty: it.quantity, price: it.product.priceUsd, code: it.product.code })),
                         seller_name: user?.name || "Vendedor",
-                        created_at: new Date(generatedTicket.date).toISOString()
+                        created_at: new Date().toISOString()
                       });
                       if (error) console.error("Error guardando venta en Supabase:", error);
                     }
