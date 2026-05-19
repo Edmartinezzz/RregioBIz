@@ -334,13 +334,25 @@ export default function InventarioPage() {
           });
 
           if (isSupabaseConfigured()) {
-            setUploadProgress(`Sincronizando ${parsedProducts.length} productos con la base de datos de Supabase...`);
-            const { error } = await supabase!
-              .from("products")
-              .upsert(dbRowsToSync, { onConflict: "id" });
-            if (error) {
-              console.error("Error al subir productos en lote a Supabase:", error);
-              alert("Importación local completada, pero hubo un error al sincronizar con Supabase.");
+            setUploadProgress(`Sincronizando ${parsedProducts.length} productos con la base de datos de Supabase (por lotes)...`);
+            let hasError = false;
+            const chunkSize = 500;
+            
+            for (let i = 0; i < dbRowsToSync.length; i += chunkSize) {
+              const chunk = dbRowsToSync.slice(i, i + chunkSize);
+              const { error } = await supabase!
+                .from("products")
+                .upsert(chunk, { onConflict: "id" });
+              
+              if (error) {
+                console.error(`Error en chunk ${i}-${i + chunkSize}:`, error);
+                hasError = true;
+                break;
+              }
+            }
+
+            if (hasError) {
+              alert("Importación local completada, pero hubo un error al sincronizar algunos lotes con Supabase. Intenta con un archivo más pequeño.");
             } else {
               alert(`¡Espectacular! Se importaron ${parsedProducts.length} productos con éxito y se subieron a Supabase.`);
             }
