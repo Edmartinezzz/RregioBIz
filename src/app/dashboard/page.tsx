@@ -484,22 +484,10 @@ export default function DashboardPage() {
 
           <div className="space-y-3">
             {topProducts.length === 0 ? (
-              // Datos de ejemplo estéticos iniciales si está vacío
-              [
-                { name: "Harina PAN 1Kg", qty: 42, price: 1.20 },
-                { name: "Queso Llanero Premium (Kg)", qty: 28, price: 5.50 },
-                { name: "Refresco Coca-Cola 2L", qty: 19, price: 2.50 }
-              ].map((p, idx) => (
-                <div key={idx} className="flex justify-between items-center text-xs p-2.5 rounded-xl bg-slate-50 border border-slate-100 hover:bg-slate-100/50 transition-colors">
-                  <div className="space-y-0.5">
-                    <span className="font-extrabold text-slate-950 block leading-tight">{p.name}</span>
-                    <span className="text-[10px] text-slate-400 font-medium">Ejemplo • ${p.price.toFixed(2)}</span>
-                  </div>
-                  <span className="px-2.5 py-1 rounded-lg bg-emerald-50 border border-emerald-100 font-extrabold text-emerald-700 text-[10px]">
-                    {p.qty} u. sold
-                  </span>
-                </div>
-              ))
+              <div className="flex flex-col items-center justify-center p-6 text-center space-y-2 border border-dashed border-border rounded-2xl bg-slate-50/50">
+                <ShoppingBag className="w-8 h-8 text-slate-300" />
+                <p className="text-xs text-slate-400 font-bold">Aún no hay ventas registradas.</p>
+              </div>
             ) : (
               topProducts.map((p, idx) => (
                 <div key={idx} className="flex justify-between items-center text-xs p-2.5 rounded-xl bg-slate-50 border border-slate-100 hover:bg-slate-100/50 transition-colors">
@@ -578,27 +566,10 @@ export default function DashboardPage() {
 
           <div className="space-y-3">
             {paymentMethodsStats.length === 0 || paymentMethodsStats.every(s => s.totalUsd === 0) ? (
-              // Datos de ejemplo estéticos iniciales si está vacío
-              [
-                { method: "Zelle Transfer (💜)", count: 18, totalUsd: 620 },
-                { method: "Efectivo USD (💵)", count: 24, totalUsd: 410 },
-                { method: "Pago Móvil (📱)", count: 32, totalUsd: 210 }
-              ].map((p, idx) => (
-                <div key={idx} className="space-y-1 p-2.5 rounded-xl bg-slate-50 border border-slate-100">
-                  <div className="flex justify-between items-center text-xs">
-                    <span className="font-extrabold text-slate-950 block">{p.method}</span>
-                    <span className="font-bold text-slate-500 font-mono text-[10px]">
-                      ${p.totalUsd.toFixed(2)} ({p.count} trans)
-                    </span>
-                  </div>
-                  <div className="w-full bg-slate-200 h-1.5 rounded-full overflow-hidden">
-                    <div 
-                      className="bg-indigo-500 h-full rounded-full"
-                      style={{ width: `${idx === 0 ? 80 : idx === 1 ? 55 : 30}%` }}
-                    />
-                  </div>
-                </div>
-              ))
+              <div className="flex flex-col items-center justify-center p-6 text-center space-y-2 border border-dashed border-border rounded-2xl bg-slate-50/50">
+                <DollarSign className="w-8 h-8 text-slate-300" />
+                <p className="text-[10px] text-slate-400 font-bold">Sin datos de canales de pago registrados.</p>
+              </div>
             ) : (
               paymentMethodsStats.slice(0, 3).map((p, idx) => {
                 const maxUsd = Math.max(...paymentMethodsStats.map(s => s.totalUsd)) || 1;
