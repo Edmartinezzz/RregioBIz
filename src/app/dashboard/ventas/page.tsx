@@ -384,7 +384,7 @@ export default function POSPage() {
     // Construir el método de pago legible
     const methods: string[] = [];
     if (ticket.payments.cashUsd > 0) methods.push("Efectivo USD");
-    if (ticket.payments.zelle > 0) methods.push("Zelle");
+    if (ticket.payments.zelle > 0) methods.push("Transferencias");
     if (ticket.payments.cashBs > 0) methods.push("Efectivo Bolívares");
     if (ticket.payments.pagoMovil > 0) methods.push("Pago Móvil");
     if (ticket.payments.posBs > 0) methods.push("Punto de Venta");
@@ -680,8 +680,8 @@ export default function POSPage() {
         </div>
       ` : ''}
       ${ticket.payments.zelle > 0 ? `
-        <div style="display: flex; justify-content: space-between; padding: 5px 0; border-bottom: 1px dashed #e2e8f0;">
-          <span style="color: #64748b; font-weight: 600; font-size: 10px;">💜 TRANSFERENCIA ZELLE (USD)</span>
+        <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px dashed #e2e8f0; padding-bottom: 4px; margin-bottom: 4px;">
+          <span style="color: #64748b; font-weight: 600; font-size: 10px;">💵 TRANSFERENCIAS (USD)</span>
           <span style="font-weight: bold; font-family: monospace; color: #0f172a; font-size: 11px;">$${ticket.payments.zelle.toFixed(2)}</span>
         </div>
       ` : ''}
@@ -1526,11 +1526,11 @@ export default function POSPage() {
                 </button>
               </div>
 
-              {/* Zelle USD */}
+              {/* Transferencias USD */}
               <div className="flex items-center gap-3 bg-muted/30 p-2 rounded-lg border border-border">
                 <div className="flex items-center gap-1.5 w-24 text-purple-500 font-extrabold flex-shrink-0">
                   <DollarSign className="w-3.5 h-3.5" />
-                  Zelle $
+                  Transf. $
                 </div>
                 <input
                   type="number"
@@ -1676,7 +1676,7 @@ export default function POSPage() {
               <div className="pt-3 border-t border-slate-100 mt-2 space-y-1.5 text-[9px] text-slate-500 font-semibold">
                 <p className="font-extrabold text-slate-700">DESGLOSE DE PAGO RECIBIDO:</p>
                 {generatedTicket.payments.cashUsd > 0 && <p>EFECTIVO USD: ${generatedTicket.payments.cashUsd.toFixed(2)}</p>}
-                {generatedTicket.payments.zelle > 0 && <p>ZELLE USD: ${generatedTicket.payments.zelle.toFixed(2)}</p>}
+                {generatedTicket.payments.zelle > 0 && <p>TRANSF. USD: ${generatedTicket.payments.zelle.toFixed(2)}</p>}
                 {generatedTicket.payments.cashBs > 0 && <p>EFECTIVO BS: {generatedTicket.payments.cashBs.toFixed(2)} Bs. (${(generatedTicket.payments.cashBs / exchangeRate).toFixed(2)})</p>}
                 {generatedTicket.payments.pagoMovil > 0 && <p>PAGO MÓVIL: {generatedTicket.payments.pagoMovil.toFixed(2)} Bs. (${(generatedTicket.payments.pagoMovil / exchangeRate).toFixed(2)})</p>}
                 {generatedTicket.payments.posBs > 0 && <p>PUNTO BS: {generatedTicket.payments.posBs.toFixed(2)} Bs. (${(generatedTicket.payments.posBs / exchangeRate).toFixed(2)})</p>}
@@ -1801,14 +1801,14 @@ export default function POSPage() {
                   const localInitial = tenantId === "default"
                     ? [
                         { id: "a1", name: "Caja Fuerte USD", bankName: "Efectivo Divisas", balance: 450.00, currency: "USD" },
-                        { id: "a2", name: "Zelle / BofA", bankName: "Bank of America", balance: 1100.00, currency: "USD" },
+                        { id: "a2", name: "Transferencias / BofA", bankName: "Bank of America", balance: 1100.00, currency: "USD" },
                         { id: "a3", name: "Banesco Corriente", bankName: "Banco Nacional", balance: 4500.00, currency: "VES" },
                         { id: "a4", name: "Pago Móvil Mercantil", bankName: "Mercantil Banco", balance: 6000.00, currency: "VES" },
                         { id: "a5", name: "Caja Chica Bs", bankName: "Efectivo Bolívares", balance: 900.00, currency: "VES" }
                       ]
                     : [
                         { id: "a1", name: "Caja Fuerte USD", bankName: "Efectivo Divisas", balance: 0.00, currency: "USD" },
-                        { id: "a2", name: "Zelle / BofA", bankName: "Bank of America", balance: 0.00, currency: "USD" },
+                        { id: "a2", name: "Transferencias / BofA", bankName: "Bank of America", balance: 0.00, currency: "USD" },
                         { id: "a3", name: "Banesco Corriente", bankName: "Banco Nacional", balance: 0.00, currency: "VES" },
                         { id: "a4", name: "Pago Móvil Mercantil", bankName: "Mercantil Banco", balance: 0.00, currency: "VES" },
                         { id: "a5", name: "Caja Chica Bs", bankName: "Efectivo Bolívares", balance: 0.00, currency: "VES" }
@@ -1953,7 +1953,7 @@ export default function POSPage() {
                 onClick={() => handleQuickPayAndProcess("zelle")}
                 className="w-full flex justify-between items-center px-4 py-3 bg-purple-50 hover:bg-purple-100 border border-purple-200 text-purple-800 font-bold rounded-xl text-xs transition-all cursor-pointer"
               >
-                <span>💜 Cobrar todo en Zelle $</span>
+                <span>💜 Cobrar todo en Transferencias $</span>
                 <span className="font-mono text-sm">${remainingUsd.toFixed(2)}</span>
               </button>
 
