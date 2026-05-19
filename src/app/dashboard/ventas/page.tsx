@@ -1720,123 +1720,138 @@ export default function POSPage() {
               </button>
 
               <button
-                onClick={() => {
-                  const tenantId = user?.tenantId || "default";
+                onClick={async () => {
+                  try {
+                    const tenantId = user?.tenantId || "default";
 
-                  // Guardar venta en el historial de ventas
-                  const savedHistory = localStorage.getItem(`regiobiz_sales_history_${tenantId}`);
-                  const history = savedHistory ? JSON.parse(savedHistory) : [];
-                  const newRecord = {
-                    id: generatedTicket.id,
-                    controlNumber: generatedTicket.controlNumber,
-                    date: generatedTicket.date,
-                    client: generatedTicket.client ? generatedTicket.client.name : "Consumidor Final",
-                    itemsCount: generatedTicket.items.reduce((sum: number, item: any) => sum + item.quantity, 0),
-                    totalUsd: generatedTicket.totalUsd,
-                    totalBs: generatedTicket.totalBs,
-                    items: generatedTicket.items.map((it: any) => ({ name: it.product.name, qty: it.quantity, price: it.product.priceUsd, code: it.product.code })),
-                    payments: generatedTicket.payments
-                  };
-                  history.unshift(newRecord);
-                  localStorage.setItem(`regiobiz_sales_history_${tenantId}`, JSON.stringify(history));
-
-                  // Sincronizar venta con Supabase
-                  if (isSupabaseConfigured()) {
-                    supabase!.from("sales_history").insert({
+                    // 1. Guardar venta en el historial local
+                    const savedHistory = localStorage.getItem(`regiobiz_sales_history_${tenantId}`);
+                    const history = savedHistory ? JSON.parse(savedHistory) : [];
+                    const newRecord = {
                       id: generatedTicket.id,
-                      tenant_id: tenantId,
-                      invoice_num: generatedTicket.controlNumber,
-                      client_name: generatedTicket.client ? generatedTicket.client.name : "Consumidor Final",
-                      client_id: generatedTicket.client ? generatedTicket.client.id : "",
-                      total_usd: generatedTicket.totalUsd,
-                      total_bs: generatedTicket.totalBs,
-                      rate: 1, // You could pass the actual rate here
-                      payment_method: generatedTicket.payments.map((p:any) => p.method).join(", "),
+                      controlNumber: generatedTicket.controlNumber,
+                      date: generatedTicket.date,
+                      client: generatedTicket.client ? generatedTicket.client.name : "Consumidor Final",
+                      itemsCount: generatedTicket.items.reduce((sum: number, item: any) => sum + item.quantity, 0),
+                      totalUsd: generatedTicket.totalUsd,
+                      totalBs: generatedTicket.totalBs,
                       items: generatedTicket.items.map((it: any) => ({ name: it.product.name, qty: it.quantity, price: it.product.priceUsd, code: it.product.code })),
-                      seller_name: user?.name || "Vendedor",
-                      created_at: new Date(generatedTicket.date).toISOString()
-                    }).then(({ error }) => {
-                      if (error) console.error("Error guardando venta en Supabase:", error);
-                    });
-                  }
+                      payments: generatedTicket.payments
+                    };
+                    history.unshift(newRecord);
+                    localStorage.setItem(`regiobiz_sales_history_${tenantId}`, JSON.stringify(history));
 
-                  // DESCONTAR STOCK DEL INVENTARIO LOCAL Y NUBE
-                  const savedProducts = localStorage.getItem(`regiobiz_products_${tenantId}`);
-                  if (savedProducts) {
-                    try {
-                      const products = JSON.parse(savedProducts);
-                      const updatedProducts = products.map((prod: any) => {
-                        const soldItem = generatedTicket.items.find((it: any) => it.product.code === prod.code || it.product.id === prod.id);
-                        if (soldItem) {
-                          return {
-                            ...prod,
-                            stock: Math.max(0, prod.stock - soldItem.quantity)
-                          };
-                        }
-                        return prod;
+                    // 2. Sincronizar venta con Supabase
+                    if (isSupabaseConfigured()) {
+                      const { error } = await supabase!.from("sales_history").insert({
+                        id: generatedTicket.id,
+                        tenant_id: tenantId,
+                        invoice_num: generatedTicket.controlNumber,
+                        client_name: generatedTicket.client ? generatedTicket.client.name : "Consumidor Final",
+                        client_id: generatedTicket.client ? generatedTicket.client.id : "",
+                        total_usd: generatedTicket.totalUsd,
+                        total_bs: generatedTicket.totalBs,
+                        rate: exchangeRate || 1, 
+                        payment_method: generatedTicket.payments.map((p:any) => p.method).join(", "),
+                        items: generatedTicket.items.map((it: any) => ({ name: it.product.name, qty: it.quantity, price: it.product.priceUsd, code: it.product.code })),
+                        seller_name: user?.name || "Vendedor",
+                        created_at: new Date(generatedTicket.date).toISOString()
                       });
-                      localStorage.setItem(`regiobiz_products_${tenantId}`, JSON.stringify(updatedProducts));
-                      
-                      // Sincronizar con Supabase si está disponible
-                      if (isSupabaseConfigured()) {
-                        generatedTicket.items.forEach(async (it: any) => {
-                          try {
-                            const newStock = Math.max(0, it.product.stock - it.quantity);
-                            await supabase!
-                              .from("products")
-                              .update({ stock: newStock })
-                              .eq("code", `${tenantId}_${it.product.code}`);
-                          } catch (dbErr) {
-                            console.error("Error al actualizar stock en Supabase:", dbErr);
+                      if (error) console.error("Error guardando venta en Supabase:", error);
+                    }
+
+                    // 3. DESCONTAR STOCK DEL INVENTARIO LOCAL Y NUBE
+                    const savedProducts = localStorage.getItem(`regiobiz_products_${tenantId}`);
+                    if (savedProducts) {
+                      try {
+                        const products = JSON.parse(savedProducts);
+                        const updatedProducts = products.map((prod: any) => {
+                          const soldItem = generatedTicket.items.find((it: any) => it.product.code === prod.code || it.product.id === prod.id);
+                          if (soldItem) {
+                            return {
+                              ...prod,
+                              stock: Math.max(0, prod.stock - soldItem.quantity)
+                            };
                           }
+                          return prod;
                         });
+                        localStorage.setItem(`regiobiz_products_${tenantId}`, JSON.stringify(updatedProducts));
+                      } catch (e) {
+                        console.error("Error al procesar JSON de inventario local:", e);
                       }
-                    } catch (e) {
-                      console.error("Error al descontar inventario:", e);
                     }
+                    
+                    // Sincronizar stock con Supabase
+                    if (isSupabaseConfigured()) {
+                      for (const it of generatedTicket.items) {
+                        try {
+                          const newStock = Math.max(0, it.product.stock - it.quantity);
+                          const { error: stockError } = await supabase!
+                            .from("products")
+                            .update({ stock: newStock })
+                            .eq("id", `${tenantId}_${it.product.code}`);
+                          
+                          if (stockError) {
+                            console.error(`Error actualizando stock de ${it.product.code}:`, stockError);
+                          }
+                        } catch (dbErr) {
+                          console.error("Excepción en Supabase actualizando stock:", dbErr);
+                        }
+                      }
+                    }
+
+                    // 4. TRASLADO AUTOMÁTICO DE DINERO A CUENTAS BANCARIAS
+                    try {
+                      const savedAccounts = localStorage.getItem(`regiobiz_accounts_${tenantId}`);
+                      const localInitial = tenantId === "default"
+                        ? [
+                            { id: "a1", name: "Caja Fuerte USD", bankName: "Efectivo Divisas", balance: 450.00, currency: "USD" },
+                            { id: "a2", name: "Transferencias / BofA", bankName: "Bank of America", balance: 1100.00, currency: "USD" },
+                            { id: "a3", name: "Banesco Corriente", bankName: "Banco Nacional", balance: 4500.00, currency: "VES" },
+                            { id: "a4", name: "Pago Móvil Mercantil", bankName: "Mercantil Banco", balance: 6000.00, currency: "VES" },
+                            { id: "a5", name: "Caja Chica Bs", bankName: "Efectivo Bolívares", balance: 900.00, currency: "VES" }
+                          ]
+                        : [
+                            { id: "a1", name: "Caja Fuerte USD", bankName: "Efectivo Divisas", balance: 0.00, currency: "USD" },
+                            { id: "a2", name: "Transferencias / BofA", bankName: "Bank of America", balance: 0.00, currency: "USD" },
+                            { id: "a3", name: "Banesco Corriente", bankName: "Banco Nacional", balance: 0.00, currency: "VES" },
+                            { id: "a4", name: "Pago Móvil Mercantil", bankName: "Mercantil Banco", balance: 0.00, currency: "VES" },
+                            { id: "a5", name: "Caja Chica Bs", bankName: "Efectivo Bolívares", balance: 0.00, currency: "VES" }
+                          ];
+                      
+                      const accounts = savedAccounts ? JSON.parse(savedAccounts) : localInitial;
+                      const updatedAccounts = accounts.map((acc: any) => {
+                        if (acc.id === "a1" && generatedTicket.payments.cashUsd > 0) {
+                          return { ...acc, balance: acc.balance + generatedTicket.payments.cashUsd };
+                        }
+                        if (acc.id === "a2" && generatedTicket.payments.zelle > 0) {
+                          return { ...acc, balance: acc.balance + generatedTicket.payments.zelle };
+                        }
+                        if (acc.id === "a3" && generatedTicket.payments.posBs > 0) {
+                          return { ...acc, balance: acc.balance + generatedTicket.payments.posBs };
+                        }
+                        if (acc.id === "a4" && generatedTicket.payments.pagoMovil > 0) {
+                          return { ...acc, balance: acc.balance + generatedTicket.payments.pagoMovil };
+                        }
+                        if (acc.id === "a5" && generatedTicket.payments.cashBs > 0) {
+                          return { ...acc, balance: acc.balance + generatedTicket.payments.cashBs };
+                        }
+                        return acc;
+                      });
+                      localStorage.setItem(`regiobiz_accounts_${tenantId}`, JSON.stringify(updatedAccounts));
+                    } catch (accErr) {
+                      console.error("Error actualizando cuentas bancarias locales:", accErr);
+                    }
+
+                    // 5. Finalizar UI
+                    setShowTicketModal(false);
+                    resetPOS();
+                    setCart([]); // Asegurar limpieza del carrito
+
+                  } catch (globalErr) {
+                    console.error("Fallo general al completar la venta:", globalErr);
+                    alert("Ocurrió un error al procesar la venta. Revisa la conexión.");
                   }
-
-                  // TRASLADO AUTOMÁTICO DE DINERO A CUENTAS BANCARIAS BIMONETARIAS
-                  const savedAccounts = localStorage.getItem(`regiobiz_accounts_${tenantId}`);
-                  const localInitial = tenantId === "default"
-                    ? [
-                        { id: "a1", name: "Caja Fuerte USD", bankName: "Efectivo Divisas", balance: 450.00, currency: "USD" },
-                        { id: "a2", name: "Transferencias / BofA", bankName: "Bank of America", balance: 1100.00, currency: "USD" },
-                        { id: "a3", name: "Banesco Corriente", bankName: "Banco Nacional", balance: 4500.00, currency: "VES" },
-                        { id: "a4", name: "Pago Móvil Mercantil", bankName: "Mercantil Banco", balance: 6000.00, currency: "VES" },
-                        { id: "a5", name: "Caja Chica Bs", bankName: "Efectivo Bolívares", balance: 900.00, currency: "VES" }
-                      ]
-                    : [
-                        { id: "a1", name: "Caja Fuerte USD", bankName: "Efectivo Divisas", balance: 0.00, currency: "USD" },
-                        { id: "a2", name: "Transferencias / BofA", bankName: "Bank of America", balance: 0.00, currency: "USD" },
-                        { id: "a3", name: "Banesco Corriente", bankName: "Banco Nacional", balance: 0.00, currency: "VES" },
-                        { id: "a4", name: "Pago Móvil Mercantil", bankName: "Mercantil Banco", balance: 0.00, currency: "VES" },
-                        { id: "a5", name: "Caja Chica Bs", bankName: "Efectivo Bolívares", balance: 0.00, currency: "VES" }
-                      ];
-                  const accounts = savedAccounts ? JSON.parse(savedAccounts) : localInitial;
-
-                  const updatedAccounts = accounts.map((acc: any) => {
-                    if (acc.id === "a1" && generatedTicket.payments.cashUsd > 0) {
-                      return { ...acc, balance: acc.balance + generatedTicket.payments.cashUsd };
-                    }
-                    if (acc.id === "a2" && generatedTicket.payments.zelle > 0) {
-                      return { ...acc, balance: acc.balance + generatedTicket.payments.zelle };
-                    }
-                    if (acc.id === "a3" && generatedTicket.payments.posBs > 0) {
-                      return { ...acc, balance: acc.balance + generatedTicket.payments.posBs };
-                    }
-                    if (acc.id === "a4" && generatedTicket.payments.pagoMovil > 0) {
-                      return { ...acc, balance: acc.balance + generatedTicket.payments.pagoMovil };
-                    }
-                    if (acc.id === "a5" && generatedTicket.payments.cashBs > 0) {
-                      return { ...acc, balance: acc.balance + generatedTicket.payments.cashBs };
-                    }
-                    return acc;
-                  });
-                  localStorage.setItem(`regiobiz_accounts_${tenantId}`, JSON.stringify(updatedAccounts));
-
-                  setShowTicketModal(false);
-                  resetPOS();
                 }}
                 className="w-full py-3 bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-600 hover:to-teal-700 text-white font-extrabold rounded-xl text-xs transition-all text-center tracking-wider cursor-pointer uppercase flex items-center justify-center gap-1.5 shadow-md shadow-emerald-500/10 hover:scale-[1.01]"
               >
