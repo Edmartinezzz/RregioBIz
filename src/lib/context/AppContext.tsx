@@ -152,7 +152,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
   // Login con soporte multi-tenant — busca en Supabase primero
   const login = async (email: string, _providedRole: UserRole): Promise<boolean> => {
-    const emailLower = email.toLowerCase();
+    const emailLower = email.trim().toLowerCase();
     const isCarlos = emailLower.includes("carlos") || emailLower === "carlosmtinez321@gmail.com";
     
     let resolvedTenantId = "default";
@@ -233,15 +233,28 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           try {
             const { data: subData } = await supabase!
               .from("sub_users")
-              .select("*, tenants(id, name)")
+              .select("*")
               .eq("email", emailLower)
               .single();
 
             if (subData) {
               resolvedTenantId = subData.tenant_id;
-              resolvedTenantName = subData.tenants?.name || subData.tenant_id;
               resolvedName = subData.name;
               resolvedRole = subData.role as UserRole;
+              
+              // Obtener el nombre del tenant por separado para evitar depender de relaciones físicas de FK
+              try {
+                const { data: tenantData } = await supabase!
+                  .from("tenants")
+                  .select("name")
+                  .eq("id", subData.tenant_id)
+                  .single();
+                resolvedTenantName = tenantData?.name || subData.tenant_id;
+              } catch (tErr) {
+                console.error("Error al obtener nombre de empresa para el sub-usuario:", tErr);
+                resolvedTenantName = subData.tenant_id;
+              }
+
               foundInSupabase = true;
               if (subData.permissions) {
                 const merged = {
