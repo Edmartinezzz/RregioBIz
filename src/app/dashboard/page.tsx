@@ -230,18 +230,52 @@ export default function DashboardPage() {
         const savedHistory = localStorage.getItem(`regiobiz_sales_history_${tenantId}`);
         history = savedHistory ? JSON.parse(savedHistory) : [];
       }
-    
+
+      // Normalizar el historial de ventas para soportar tanto formato camelCase (Supabase) 
+      // como snake_case plano (ventas/page.tsx en localStorage) y formatos de items
+      const normalizedHistory = history.map((rec: any) => {
+        const totalUsd = Number(rec.totalUsd ?? rec.total_usd ?? 0);
+        const totalBs = Number(rec.totalBs ?? rec.total_bs ?? 0);
+
+        const cashUsd = Number(rec.payments?.cashUsd ?? rec.pay_cash_usd ?? rec.payCashUsd ?? 0);
+        const zelle = Number(rec.payments?.zelle ?? rec.pay_zelle ?? rec.payZelle ?? 0);
+        const pagoMovil = Number(rec.payments?.pagoMovil ?? rec.pay_pago_movil ?? rec.payPagoMovil ?? 0);
+        const posBs = Number(rec.payments?.posBs ?? rec.pay_pos_bs ?? rec.payPosBs ?? 0);
+        const cashBs = Number(rec.payments?.cashBs ?? rec.pay_cash_bs ?? rec.payCashBs ?? 0);
+
+        const rawItems = Array.isArray(rec.items) ? rec.items : [];
+        const normalizedItems = rawItems.map((it: any) => ({
+          name: it.name || "Producto sin nombre",
+          qty: Number(it.quantity ?? it.qty ?? 0),
+          price: Number(it.price_usd ?? it.price ?? 0)
+        }));
+
+        return {
+          ...rec,
+          totalUsd,
+          totalBs,
+          payments: {
+            cashUsd,
+            zelle,
+            pagoMovil,
+            posBs,
+            cashBs
+          },
+          items: normalizedItems
+        };
+      });
+     
     // Calcular ventas totales de HOY y AYER para el crecimiento
     const todayStr = new Date().toISOString().split("T")[0];
     const yesterdayDate = new Date();
     yesterdayDate.setDate(yesterdayDate.getDate() - 1);
     const yesterdayStr = yesterdayDate.toISOString().split("T")[0];
 
-    const todaySales = history.filter((rec: any) => {
+    const todaySales = normalizedHistory.filter((rec: any) => {
       const d = (rec.created_at || rec.date || "");
       return d.slice(0, 10) === todayStr;
     });
-    const yesterdaySales = history.filter((rec: any) => {
+    const yesterdaySales = normalizedHistory.filter((rec: any) => {
       const d = (rec.created_at || rec.date || "");
       return d.slice(0, 10) === yesterdayStr;
     });
@@ -262,7 +296,7 @@ export default function DashboardPage() {
 
     // Calcular productos más vendidos
     const productSalesMap: Record<string, { qty: number; price: number }> = {};
-    history.forEach((rec: any) => {
+    normalizedHistory.forEach((rec: any) => {
       if (rec.items && Array.isArray(rec.items)) {
         rec.items.forEach((it: any) => {
           const name = it.name || "Producto sin nombre";
@@ -288,7 +322,7 @@ export default function DashboardPage() {
       "Efectivo Bolívares (🪙)": { count: 0, totalUsd: 0 }
     };
     
-    history.forEach((rec: any) => {
+    normalizedHistory.forEach((rec: any) => {
       const pm = rec.payments || {};
       if (pm.cashUsd > 0) {
         paymentMap["Efectivo USD (💵)"].count += 1;

@@ -294,7 +294,7 @@ export default function FinanzasPage() {
     const daySales = salesHistory.filter((s: any) =>
       (s.created_at || s.date || "").slice(0, 10) === dayKey
     );
-    const usd = daySales.reduce((a: number, s: any) => a + (parseFloat(s.total_usd) || 0), 0);
+    const usd = daySales.reduce((a: number, s: any) => a + (parseFloat(s.total_usd ?? s.totalUsd) || 0), 0);
     return { day: dayLabels[d.getDay()], usd: parseFloat(usd.toFixed(2)) };
   });
 
