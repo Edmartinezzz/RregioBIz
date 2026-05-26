@@ -321,24 +321,45 @@ export default function DashboardPage() {
     let products: any[] = [];
     if (isSupabaseConfigured()) {
       try {
-        const { data, error } = await supabase!
-          .from("products")
-          .select("*")
-          .eq("tenant_id", tenantId);
-        if (data && !error) {
-          products = data.map((p: any) => ({
-            id: p.id,
-            code: p.code,
-            name: p.name,
-            category: p.category ? (p.category.charAt(0).toUpperCase() + p.category.slice(1)) : "General",
-            costUsd: Number(p.cost_usd || 0),
-            priceUsd: Number(p.price_usd || 0),
-            stock: Number(p.stock || 0),
-            taxCategory: p.tax_category || "exempt"
-          }));
-          // Guardar en caché local
-          localStorage.setItem(`regiobiz_products_${tenantId}`, JSON.stringify(products));
+        let from = 0;
+        const limit = 1000;
+        let hasMore = true;
+        
+        while (hasMore) {
+          const { data, error } = await supabase!
+            .from("products")
+            .select("*")
+            .eq("tenant_id", tenantId)
+            .range(from, from + limit - 1);
+            
+          if (error) {
+            console.error("Error fetching products for dashboard:", error);
+            break;
+          }
+          if (data) {
+            const mappedChunk = data.map((p: any) => ({
+              id: p.id,
+              code: p.code,
+              name: p.name,
+              category: p.category ? (p.category.charAt(0).toUpperCase() + p.category.slice(1)) : "General",
+              costUsd: Number(p.cost_usd || 0),
+              priceUsd: Number(p.price_usd || 0),
+              stock: Number(p.stock || 0),
+              taxCategory: p.tax_category || "exempt"
+            }));
+            products = [...products, ...mappedChunk];
+            if (data.length < limit) {
+              hasMore = false;
+            } else {
+              from += limit;
+            }
+          } else {
+            hasMore = false;
+          }
         }
+        
+        // Guardar en caché local
+        localStorage.setItem(`regiobiz_products_${tenantId}`, JSON.stringify(products));
       } catch (err) {
         console.error("Error al cargar productos para el dashboard desde Supabase:", err);
       }
@@ -351,8 +372,8 @@ export default function DashboardPage() {
     
     setTotalProductsCount(products.length);
     
-    // Calcular valor total del stock
-    const stockValue = products.reduce((sum: number, prod: any) => sum + ((prod.stock || 0) * (prod.priceUsd || 0)), 0);
+    // Calcular valor total del stock (a precio de costo unitario para evitar la doble multiplicación)
+    const stockValue = products.reduce((sum: number, prod: any) => sum + ((prod.stock || 0) * (prod.costUsd || 0)), 0);
     setActiveStockValueUsd(stockValue);
 
     // Calcular productos con bajo stock (< 5)

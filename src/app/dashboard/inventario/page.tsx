@@ -48,23 +48,45 @@ export default function InventarioPage() {
     if (isSupabaseConfigured()) {
       const fetchSupabaseProducts = async () => {
         try {
-          const { data, error } = await supabase!
-            .from("products")
-            .select("*")
-            .eq("tenant_id", tenantId);
-          if (data && !error) {
-            const mapped: ProductItem[] = data.map((p: any) => ({
-              id: p.id,
-              code: p.code,
-              name: p.name,
-              category: p.category.charAt(0).toUpperCase() + p.category.slice(1),
-              costUsd: Number(p.cost_usd),
-              priceUsd: Number(p.price_usd),
-              stock: Number(p.stock),
-              taxCategory: "exempt"
-            }));
-            setProducts(mapped);
+          let allProducts: any[] = [];
+          let from = 0;
+          const limit = 1000;
+          let hasMore = true;
+          
+          while (hasMore) {
+            const { data, error } = await supabase!
+              .from("products")
+              .select("*")
+              .eq("tenant_id", tenantId)
+              .range(from, from + limit - 1);
+              
+            if (error) {
+              console.error("Error fetching products:", error);
+              break;
+            }
+            if (data) {
+              allProducts = [...allProducts, ...data];
+              if (data.length < limit) {
+                hasMore = false;
+              } else {
+                from += limit;
+              }
+            } else {
+              hasMore = false;
+            }
           }
+
+          const mapped: ProductItem[] = allProducts.map((p: any) => ({
+            id: p.id,
+            code: p.code,
+            name: p.name,
+            category: p.category ? (p.category.charAt(0).toUpperCase() + p.category.slice(1)) : "General",
+            costUsd: Number(p.cost_usd || 0),
+            priceUsd: Number(p.price_usd || 0),
+            stock: Number(p.stock || 0),
+            taxCategory: p.tax_category || "exempt"
+          }));
+          setProducts(mapped);
         } catch (err) {
           console.error("Error al cargar inventario de Supabase:", err);
         }
