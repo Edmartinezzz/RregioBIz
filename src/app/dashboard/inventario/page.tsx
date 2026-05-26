@@ -242,7 +242,7 @@ export default function InventarioPage() {
 
         const synonyms = {
           code: ["codigo", "code", "barcode", "barras", "codigo_de_barra", "codigo_de_barras", "codigo de barra", "codigo de barras", "upc", "sku", "id", "codigo", "clave"],
-          name: ["nombre", "name", "descripcion", "descripcion", "producto", "product", "articulo", "articulo", "titulo", "titulo", "detalle"],
+          name: ["nombre", "nmbre", "nmb", "nom", "name", "descripcion", "producto", "product", "articulo", "titulo", "detalle"],
           price: ["precio", "price", "precio_usd", "price_usd", "precio_venta", "pvp", "venta", "precio de venta", "precio venta", "valor"],
           cost: ["costo", "cost", "costo_usd", "cost_usd", "costo_compra", "compra", "costo compra"],
           stock: ["stock", "cantidad", "existencia", "inventario", "cantidad existente", "cantidad_existente", "qty", "cant", "unidades"],
