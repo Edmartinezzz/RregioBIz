@@ -58,61 +58,79 @@ export default function POSPage() {
   const [priceCurrency, setPriceCurrency] = useState<"USD" | "Bs">("USD");
   const [showQuickPayModal, setShowQuickPayModal] = useState(false);
 
-  // Cargar catálogo de productos dinámicamente de Supabase o LocalStorage
-  useEffect(() => {
+  // ─── Cargar catálogo de productos (Supabase o LocalStorage) ─────────────────
+  // Extraído como callback para poder reutilizarlo en visibilitychange y focus,
+  // ya que Next.js App Router cachea los componentes dentro del mismo layout
+  // y el useEffect no se re-ejecuta al volver a la página por navegación interna.
+  const fetchCatalog = useCallback(async () => {
+    if (!user) return;
+    const tenantId = user.tenantId || "default";
+
     if (isSupabaseConfigured()) {
-      if (!user) return;
-      const fetchSupabaseProductsForPOS = async () => {
-        try {
-          const tenantId = user.tenantId || "default";
-          const { data, error } = await supabase!
-            .from("products")
-            .select("*")
-            .eq("tenant_id", tenantId);
-            
-          if (data && !error) {
-            const mapped: Product[] = data.map((p: any) => ({
-              id: p.id,
-              code: p.code,
-              name: p.name,
-              category: p.category ? p.category.charAt(0).toUpperCase() + p.category.slice(1) : "General",
-              priceUsd: Number(p.price_usd) || 0,
-              taxCategory: p.tax_category || "exempt",
-              stock: Number(p.stock) || 0
-            }));
-            setCatalog(mapped);
-          }
-        } catch (err) {
-          console.error("Error al cargar inventario para POS de Supabase:", err);
+      try {
+        const { data, error } = await supabase!
+          .from("products")
+          .select("*")
+          .eq("tenant_id", tenantId);
+
+        if (data && !error) {
+          const mapped: Product[] = data.map((p: any) => ({
+            id: p.id,
+            code: p.code,
+            name: p.name,
+            category: p.category ? p.category.charAt(0).toUpperCase() + p.category.slice(1) : "General",
+            priceUsd: Number(p.price_usd) || 0,
+            taxCategory: p.tax_category || "exempt",
+            stock: Number(p.stock) || 0
+          }));
+          setCatalog(mapped);
         }
-      };
-      fetchSupabaseProductsForPOS();
+      } catch (err) {
+        console.error("Error al cargar inventario para POS de Supabase:", err);
+      }
     } else {
-      if (user) {
-        const tenantId = user.tenantId || "default";
-        const saved = localStorage.getItem(`regiobiz_products_${tenantId}`);
-        if (saved) {
-          try {
-            const parsed = JSON.parse(saved);
-            const mapped: Product[] = parsed.map((p: any) => ({
-              id: p.id,
-              code: p.code,
-              name: p.name,
-              category: p.category,
-              priceUsd: p.priceUsd,
-              taxCategory: p.taxCategory,
-              stock: p.stock
-            }));
-            setCatalog(mapped);
-          } catch (e) {
-            setCatalog([]);
-          }
-        } else {
+      const saved = localStorage.getItem(`regiobiz_products_${tenantId}`);
+      if (saved) {
+        try {
+          const parsed = JSON.parse(saved);
+          const mapped: Product[] = parsed.map((p: any) => ({
+            id: p.id,
+            code: p.code,
+            name: p.name,
+            category: p.category,
+            priceUsd: p.priceUsd,
+            taxCategory: p.taxCategory,
+            stock: p.stock
+          }));
+          setCatalog(mapped);
+        } catch (e) {
           setCatalog([]);
         }
+      } else {
+        setCatalog([]);
       }
     }
   }, [user]);
+
+  // Carga inicial + recarga automática al volver a la pestaña/ventana
+  useEffect(() => {
+    fetchCatalog();
+
+    // Re-cargar catálogo cada vez que la página vuelve a ser visible
+    // (por ejemplo, el usuario venía de inventario de agregar un producto)
+    const handleVisibilityChange = () => {
+      if (!document.hidden) fetchCatalog();
+    };
+    const handleFocus = () => fetchCatalog();
+
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    window.addEventListener("focus", handleFocus);
+
+    return () => {
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+      window.removeEventListener("focus", handleFocus);
+    };
+  }, [fetchCatalog]);
   
   // Datos del Cliente (Requerimiento Fiscal)
   const [isFiscalMode, setIsFiscalMode] = useState(false);
