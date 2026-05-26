@@ -318,8 +318,36 @@ export default function DashboardPage() {
     setPaymentMethodsStats(pmStats);
 
     // 2. Cargar inventario
-    const savedProducts = localStorage.getItem(`regiobiz_products_${tenantId}`);
-    const products = savedProducts ? JSON.parse(savedProducts) : [];
+    let products: any[] = [];
+    if (isSupabaseConfigured()) {
+      try {
+        const { data, error } = await supabase!
+          .from("products")
+          .select("*")
+          .eq("tenant_id", tenantId);
+        if (data && !error) {
+          products = data.map((p: any) => ({
+            id: p.id,
+            code: p.code,
+            name: p.name,
+            category: p.category ? (p.category.charAt(0).toUpperCase() + p.category.slice(1)) : "General",
+            costUsd: Number(p.cost_usd || 0),
+            priceUsd: Number(p.price_usd || 0),
+            stock: Number(p.stock || 0),
+            taxCategory: p.tax_category || "exempt"
+          }));
+          // Guardar en caché local
+          localStorage.setItem(`regiobiz_products_${tenantId}`, JSON.stringify(products));
+        }
+      } catch (err) {
+        console.error("Error al cargar productos para el dashboard desde Supabase:", err);
+      }
+    }
+
+    if (products.length === 0) {
+      const savedProducts = localStorage.getItem(`regiobiz_products_${tenantId}`);
+      products = savedProducts ? JSON.parse(savedProducts) : [];
+    }
     
     setTotalProductsCount(products.length);
     
