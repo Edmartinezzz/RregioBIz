@@ -19,7 +19,8 @@ import {
   Tag,
   Download,
   Upload,
-  Trash2
+  Trash2,
+  Pencil
 } from "lucide-react";
 
 interface ProductItem {
@@ -124,7 +125,7 @@ export default function InventarioPage() {
   const [showAddModal, setShowAddModal] = useState(false);
   const [newName, setNewName] = useState("");
   const [newCode, setNewCode] = useState("");
-  const [newCategory, setNewCategory] = useState("Alimentos");
+  const [newCategory, setNewCategory] = useState("");
   const [newCost, setNewCost] = useState("");
   const [newPrice, setNewPrice] = useState("");
   const [newStock, setNewStock] = useState("");
@@ -182,6 +183,72 @@ export default function InventarioPage() {
     setNewCost("");
     setNewPrice("");
     setNewStock("");
+  };
+
+  // ─── Estado del modal de edición de producto ────────────────────────────────
+  const [editingProduct, setEditingProduct] = useState<ProductItem | null>(null);
+  const [editName, setEditName] = useState("");
+  const [editCode, setEditCode] = useState("");
+  const [editCategory, setEditCategory] = useState("");
+  const [editCost, setEditCost] = useState("");
+  const [editPrice, setEditPrice] = useState("");
+  const [editStock, setEditStock] = useState("");
+  const [editTax, setEditTax] = useState<"exempt" | "iva_16">("exempt");
+
+  const openEditModal = (product: ProductItem) => {
+    setEditingProduct(product);
+    setEditName(product.name);
+    setEditCode(product.code);
+    setEditCategory(product.category);
+    setEditCost(String(product.costUsd));
+    setEditPrice(String(product.priceUsd));
+    setEditStock(String(product.stock));
+    setEditTax(product.taxCategory);
+  };
+
+  const handleSaveEdit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingProduct) return;
+
+    const cleanCategory = editCategory.trim();
+    const capitalizedCategory = cleanCategory
+      ? (cleanCategory.charAt(0).toUpperCase() + cleanCategory.slice(1))
+      : "General";
+
+    const updated: ProductItem = {
+      ...editingProduct,
+      name: editName,
+      code: editCode,
+      category: capitalizedCategory,
+      costUsd: parseFloat(editCost) || 0,
+      priceUsd: parseFloat(editPrice) || 0,
+      stock: parseInt(editStock) || 0,
+      taxCategory: editTax,
+    };
+
+    setProducts(prev => prev.map(p => p.id === updated.id ? updated : p));
+    setEditingProduct(null);
+
+    if (isSupabaseConfigured()) {
+      try {
+        const tenantId = user?.tenantId || "default";
+        const { error } = await supabase!
+          .from("products")
+          .update({
+            name: updated.name,
+            code: updated.code,
+            category: updated.category.toLowerCase(),
+            cost_usd: updated.costUsd,
+            price_usd: updated.priceUsd,
+            stock: updated.stock,
+            tax_category: updated.taxCategory,
+          })
+          .eq("id", updated.id);
+        if (error) console.error("Error al actualizar producto en Supabase:", error);
+      } catch (err) {
+        console.error("Error de red al actualizar producto:", err);
+      }
+    }
   };
 
   // Descargar Plantilla CSV para Importación Masiva
@@ -617,14 +684,27 @@ export default function InventarioPage() {
                   </div>
                 </div>
                 
-                {/* Badge de Stock */}
-                <span className={`inline-flex items-center gap-1 text-[9px] font-extrabold px-2.5 py-1 rounded-xl uppercase tracking-wider ${
-                  isLowStock 
-                    ? "bg-red-50 text-red-600 border border-red-200 animate-pulse"
-                    : "bg-emerald-50 text-emerald-600 border border-emerald-200"
-                }`}>
-                  {isLowStock ? "Bajo Stock" : "Suficiente"}
-                </span>
+                {/* Botón Editar (solo admin) */}
+                {canModify && (
+                  <button
+                    onClick={() => openEditModal(product)}
+                    title="Editar producto"
+                    className="p-2 rounded-xl hover:bg-indigo-50 text-slate-400 hover:text-indigo-600 transition-all cursor-pointer"
+                  >
+                    <Pencil className="w-3.5 h-3.5" />
+                  </button>
+                )}
+                
+                {/* Badge de Stock (cuando NO hay botón editar) */}
+                {!canModify && (
+                  <span className={`inline-flex items-center gap-1 text-[9px] font-extrabold px-2.5 py-1 rounded-xl uppercase tracking-wider ${
+                    isLowStock 
+                      ? "bg-red-50 text-red-600 border border-red-200 animate-pulse"
+                      : "bg-emerald-50 text-emerald-600 border border-emerald-200"
+                  }`}>
+                    {isLowStock ? "Bajo Stock" : "Suficiente"}
+                  </span>
+                )}
               </div>
 
               {/* Parte Media: Nombre del Producto (Legible e Impactante) */}
@@ -836,6 +916,151 @@ export default function InventarioPage() {
                   className="flex-1 py-2.5 bg-primary hover:bg-indigo-600 text-white font-bold rounded-lg cursor-pointer"
                 >
                   Registrar Producto
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL DE EDICIÓN DE PRODUCTO */}
+      {editingProduct && canModify && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-sm p-4 animate-in fade-in duration-200">
+          <div className="premium-card w-full max-w-md p-6 space-y-6 relative border border-indigo-300/40 bg-white">
+            <div className="flex justify-between items-center border-b border-border pb-3">
+              <div>
+                <h3 className="text-sm font-bold text-slate-900 uppercase tracking-wider">
+                  Editar Producto
+                </h3>
+                <p className="text-[10px] text-slate-500 mt-0.5">Los cambios se sincronizan con Supabase automáticamente.</p>
+              </div>
+              <button
+                onClick={() => setEditingProduct(null)}
+                className="text-slate-400 hover:text-slate-600 cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveEdit} className="space-y-4 text-xs">
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-1">
+                  <label className="text-slate-600 font-bold uppercase block">Código SKU</label>
+                  <input
+                    type="text"
+                    value={editCode}
+                    onChange={(e) => setEditCode(e.target.value)}
+                    className="w-full px-3 py-2 bg-white border border-border rounded-lg text-slate-900 font-mono focus:outline-none focus:border-primary"
+                    required
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-slate-600 font-bold uppercase block">Categoría</label>
+                  <input
+                    type="text"
+                    list="edit-categories-list"
+                    value={editCategory}
+                    onChange={(e) => setEditCategory(e.target.value)}
+                    placeholder="Ej: Bebidas, Lácteos..."
+                    className="w-full px-3 py-2 bg-white border border-border rounded-lg text-slate-900 focus:outline-none focus:border-primary"
+                    required
+                  />
+                  <datalist id="edit-categories-list">
+                    {categories
+                      .filter(cat => cat !== "all")
+                      .map(cat => (
+                        <option key={cat} value={cat} />
+                      ))
+                    }
+                  </datalist>
+                </div>
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-slate-600 font-bold uppercase block">Nombre Comercial</label>
+                <input
+                  type="text"
+                  value={editName}
+                  onChange={(e) => setEditName(e.target.value)}
+                  className="w-full px-3 py-2 bg-white border border-border rounded-lg text-slate-900 focus:outline-none focus:border-primary"
+                  required
+                />
+              </div>
+
+              <div className="grid grid-cols-3 gap-3">
+                <div className="space-y-1">
+                  <label className="text-slate-600 font-bold uppercase block">Costo USD ($)</label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    value={editCost}
+                    onChange={(e) => setEditCost(e.target.value)}
+                    className="w-full px-3 py-2 bg-white border border-border rounded-lg text-slate-900 font-mono focus:outline-none focus:border-primary"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-slate-600 font-bold uppercase block">Precio USD ($)</label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    value={editPrice}
+                    onChange={(e) => setEditPrice(e.target.value)}
+                    className="w-full px-3 py-2 bg-white border border-border rounded-lg text-slate-900 font-mono focus:outline-none focus:border-primary"
+                    required
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-slate-600 font-bold uppercase block">Cantidad</label>
+                  <input
+                    type="number"
+                    value={editStock}
+                    onChange={(e) => setEditStock(e.target.value)}
+                    className="w-full px-3 py-2 bg-white border border-border rounded-lg text-slate-900 font-mono focus:outline-none focus:border-primary"
+                    required
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-1.5 pt-1">
+                <label className="text-slate-600 font-bold uppercase block">Impuestos</label>
+                <div className="flex gap-4">
+                  <label className="flex items-center gap-1.5 text-slate-700 font-bold cursor-pointer">
+                    <input
+                      type="radio"
+                      name="editTax"
+                      checked={editTax === "exempt"}
+                      onChange={() => setEditTax("exempt")}
+                      className="text-primary focus:ring-0"
+                    />
+                    Exento (Cesta Básica)
+                  </label>
+                  <label className="flex items-center gap-1.5 text-slate-700 font-bold cursor-pointer">
+                    <input
+                      type="radio"
+                      name="editTax"
+                      checked={editTax === "iva_16"}
+                      onChange={() => setEditTax("iva_16")}
+                      className="text-primary focus:ring-0"
+                    />
+                    IVA Gravado (16%)
+                  </label>
+                </div>
+              </div>
+
+              <div className="pt-4 flex gap-3">
+                <button
+                  type="button"
+                  onClick={() => setEditingProduct(null)}
+                  className="flex-1 py-2.5 border border-border hover:bg-slate-50 text-slate-600 font-bold rounded-lg cursor-pointer"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  className="flex-1 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-lg cursor-pointer flex items-center justify-center gap-2"
+                >
+                  <Check className="w-4 h-4" />
+                  Guardar Cambios
                 </button>
               </div>
             </form>
