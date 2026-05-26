@@ -55,6 +55,7 @@ export default function POSPage() {
   const [cart, setCart] = useState<CartItem[]>([]);
   const [editingCartItem, setEditingCartItem] = useState<CartItem | null>(null);
   const [tempPriceUsd, setTempPriceUsd] = useState("");
+  const [priceCurrency, setPriceCurrency] = useState<"USD" | "Bs">("USD");
   const [showQuickPayModal, setShowQuickPayModal] = useState(false);
 
   // Cargar catálogo de productos dinámicamente de Supabase o LocalStorage
@@ -1884,33 +1885,84 @@ export default function POSPage() {
             </div>
 
             <div className="space-y-4 text-xs text-left">
+
+              {/* Toggle de Moneda USD / Bs */}
+              <div className="flex items-center gap-1 p-1 bg-slate-100 rounded-xl">
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (priceCurrency !== "USD") {
+                      // Convertir Bs a USD
+                      const bs = parseFloat(tempPriceUsd || "0");
+                      setTempPriceUsd(exchangeRate > 0 ? (bs / exchangeRate).toFixed(2) : "0");
+                      setPriceCurrency("USD");
+                    }
+                  }}
+                  className={`flex-1 py-2 rounded-lg text-[11px] font-extrabold uppercase tracking-wide transition-all cursor-pointer ${
+                    priceCurrency === "USD"
+                      ? "bg-white text-emerald-700 shadow-sm border border-emerald-200"
+                      : "text-slate-500 hover:text-slate-700"
+                  }`}
+                >
+                  💵 Dólares (USD)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (priceCurrency !== "Bs") {
+                      // Convertir USD a Bs
+                      const usd = parseFloat(tempPriceUsd || "0");
+                      setTempPriceUsd((usd * exchangeRate).toFixed(2));
+                      setPriceCurrency("Bs");
+                    }
+                  }}
+                  className={`flex-1 py-2 rounded-lg text-[11px] font-extrabold uppercase tracking-wide transition-all cursor-pointer ${
+                    priceCurrency === "Bs"
+                      ? "bg-white text-indigo-700 shadow-sm border border-indigo-200"
+                      : "text-slate-500 hover:text-slate-700"
+                  }`}
+                >
+                  🪙 Bolívares (Bs)
+                </button>
+              </div>
+
               <div className="space-y-1">
                 <label className="text-[10px] font-bold text-slate-600 uppercase block">
-                  Precio en Dólares ($)
+                  {priceCurrency === "USD" ? "Precio en Dólares ($)" : "Precio en Bolívares (Bs.)"}
                 </label>
                 <div className="relative">
-                  <span className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400 font-bold">
-                    $
+                  <span className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none font-bold text-sm"
+                    style={{ color: priceCurrency === "USD" ? "#059669" : "#4338ca" }}>
+                    {priceCurrency === "USD" ? "$" : "Bs"}
                   </span>
                   <input
                     type="number"
                     step="0.01"
                     value={tempPriceUsd}
                     onChange={(e) => setTempPriceUsd(e.target.value)}
-                    className="w-full pl-7 pr-4 py-2.5 bg-white border border-border rounded-xl text-slate-900 font-mono text-sm focus:outline-none focus:border-primary"
+                    className="w-full pl-9 pr-4 py-2.5 bg-white border border-border rounded-xl text-slate-900 font-mono text-sm focus:outline-none focus:border-primary"
                     placeholder="0.00"
                     autoFocus
                   />
                 </div>
               </div>
 
-              {/* Live Preview de Tasa en Bolívares */}
-              <div className="p-3 bg-indigo-50/50 border border-indigo-100 rounded-xl space-y-1">
+              {/* Live Preview de equivalencia en la otra moneda */}
+              <div className={`p-3 rounded-xl space-y-1 border ${
+                priceCurrency === "USD"
+                  ? "bg-indigo-50/50 border-indigo-100"
+                  : "bg-emerald-50/50 border-emerald-100"
+              }`}>
                 <p className="text-[10px] font-bold text-slate-500 uppercase">
-                  Equivalente a tasa oficial ({exchangeRate.toFixed(2)} Bs.)
+                  {priceCurrency === "USD" ? `Equivale en Bs. (Tasa: ${exchangeRate.toFixed(2)})` : `Equivale en USD (Tasa: ${exchangeRate.toFixed(2)})`}
                 </p>
-                <p className="text-sm font-black text-indigo-700 font-mono">
-                  {(parseFloat(tempPriceUsd || "0") * exchangeRate).toFixed(2)} Bs.
+                <p className={`text-sm font-black font-mono ${
+                  priceCurrency === "USD" ? "text-indigo-700" : "text-emerald-700"
+                }`}>
+                  {priceCurrency === "USD"
+                    ? `${(parseFloat(tempPriceUsd || "0") * exchangeRate).toFixed(2)} Bs.`
+                    : `$ ${exchangeRate > 0 ? (parseFloat(tempPriceUsd || "0") / exchangeRate).toFixed(4) : "0.0000"}`
+                  }
                 </p>
               </div>
             </div>
@@ -1918,7 +1970,7 @@ export default function POSPage() {
             <div className="flex gap-3 pt-2">
               <button
                 type="button"
-                onClick={() => setEditingCartItem(null)}
+                onClick={() => { setEditingCartItem(null); setPriceCurrency("USD"); }}
                 className="flex-1 py-2.5 border border-border hover:bg-slate-50 text-slate-600 font-bold rounded-xl cursor-pointer text-xs"
               >
                 Cancelar
@@ -1926,17 +1978,22 @@ export default function POSPage() {
               <button
                 type="button"
                 onClick={() => {
-                  const newPrice = parseFloat(tempPriceUsd);
-                  if (!isNaN(newPrice) && newPrice >= 0) {
-                    setCart(cart.map(item => 
-                      item.product.id === editingCartItem.product.id 
-                        ? { ...item, product: { ...item.product, priceUsd: newPrice } }
-                        : item
-                    ));
-                    setEditingCartItem(null);
-                  } else {
+                  const inputVal = parseFloat(tempPriceUsd);
+                  if (isNaN(inputVal) || inputVal < 0) {
                     alert("Por favor ingresa un precio numérico válido.");
+                    return;
                   }
+                  // Siempre convertir a USD antes de guardar
+                  const finalPriceUsd = priceCurrency === "Bs"
+                    ? (exchangeRate > 0 ? inputVal / exchangeRate : 0)
+                    : inputVal;
+                  setCart(cart.map(item =>
+                    item.product.id === editingCartItem.product.id
+                      ? { ...item, product: { ...item.product, priceUsd: parseFloat(finalPriceUsd.toFixed(4)) } }
+                      : item
+                  ));
+                  setEditingCartItem(null);
+                  setPriceCurrency("USD");
                 }}
                 className="flex-1 py-2.5 bg-primary hover:bg-indigo-600 text-white font-bold rounded-xl cursor-pointer text-xs"
               >
