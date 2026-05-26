@@ -134,11 +134,17 @@ export default function InventarioPage() {
     e.preventDefault();
     if (!newName || !newCode || !newPrice || !newStock) return;
 
+    // Normalizar la categoría a formato Capitalizado (ej: "Alimentos", "Bebidas", "Dulces", etc.)
+    const cleanCategory = newCategory.trim();
+    const capitalizedCategory = cleanCategory 
+      ? (cleanCategory.charAt(0).toUpperCase() + cleanCategory.slice(1)) 
+      : "General";
+
     const newItem: ProductItem = {
       id: `p${products.length + 1}`,
       code: newCode,
       name: newName,
-      category: newCategory,
+      category: capitalizedCategory,
       costUsd: parseFloat(newCost) || 0,
       priceUsd: parseFloat(newPrice),
       stock: parseInt(newStock),
@@ -159,7 +165,7 @@ export default function InventarioPage() {
             tenant_id: tenantId,
             code: newCode,
             name: newName,
-            category: newCategory.toLowerCase(),
+            category: capitalizedCategory.toLowerCase(),
             cost_usd: parseFloat(newCost) || 0,
             price_usd: parseFloat(newPrice),
             stock: parseInt(newStock),
@@ -722,16 +728,23 @@ export default function InventarioPage() {
                 </div>
                 <div className="space-y-1">
                   <label className="text-slate-600 font-bold uppercase block">Categoría</label>
-                  <select
+                  <input
+                    type="text"
+                    list="categories-list"
                     value={newCategory}
                     onChange={(e) => setNewCategory(e.target.value)}
-                    className="w-full px-3 py-2 bg-white border border-border rounded-lg text-slate-900 focus:outline-none focus:border-primary cursor-pointer"
-                  >
-                    <option value="Alimentos">Alimentos</option>
-                    <option value="Bebidas">Bebidas</option>
-                    <option value="Lácteos">Lácteos</option>
-                    <option value="Dulces">Dulces</option>
-                  </select>
+                    placeholder="Escribe o selecciona..."
+                    className="w-full px-3 py-2 bg-white border border-border rounded-lg text-slate-900 focus:outline-none focus:border-primary"
+                    required
+                  />
+                  <datalist id="categories-list">
+                    {categories
+                      .filter(cat => cat !== "all")
+                      .map(cat => (
+                        <option key={cat} value={cat} />
+                      ))
+                    }
+                  </datalist>
                 </div>
               </div>
 
