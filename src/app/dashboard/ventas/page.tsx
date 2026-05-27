@@ -1106,7 +1106,7 @@ export default function POSPage() {
               <button
                 key={product.id}
                 onClick={() => addToCart(product)}
-                className="premium-card premium-card-hover p-4 text-left flex flex-col justify-between h-44 group cursor-pointer"
+                className="premium-card premium-card-hover p-4 text-left flex flex-col justify-between min-h-[12.5rem] group cursor-pointer"
               >
                 <div>
                   <div className="flex justify-between items-start">
@@ -1120,26 +1120,57 @@ export default function POSPage() {
                     </span>
                   </div>
                   
-                  <h4 className="text-base font-black text-slate-900 mt-3 group-hover:text-primary transition-colors line-clamp-2 tracking-tight">
+                  <h4 className="text-base font-black text-slate-900 mt-2 group-hover:text-primary transition-colors line-clamp-1 tracking-tight">
                     {product.name}
                   </h4>
                 </div>
 
-                <div className="mt-4 pt-3 border-t border-slate-900/50 flex justify-between items-end w-full">
-                  <div>
-                    {/* Precio Dual */}
-                    <p className="text-base font-black text-usd">${product.priceUsd.toFixed(2)}</p>
-                    <p className="text-xs font-bold text-bs font-mono mt-0.5">{priceBs.toFixed(2)} Bs.</p>
-                  </div>
-                  <span className={`text-xs font-extrabold px-2.5 py-0.5 rounded ${
-                    product.stock <= 0 
-                      ? "bg-red-500/10 text-red-500 border border-red-500/20" 
-                      : product.stock <= 10 
-                      ? "bg-amber-500/10 text-amber-600" 
-                      : "text-slate-600 bg-slate-100 border border-slate-200"
-                  }`}>
-                    Stock: {product.stock}
-                  </span>
+                <div className="mt-4 pt-3 border-t border-slate-900/50 flex flex-col gap-2 w-full">
+                  {product.taxCategory === "exempt" ? (
+                    <div className="flex justify-between items-end w-full">
+                      <div>
+                        <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block">Precio (Exento)</span>
+                        <p className="text-sm font-black text-usd">${product.priceUsd.toFixed(2)}</p>
+                        <p className="text-[10px] font-bold text-bs font-mono">{priceBs.toFixed(2)} Bs.</p>
+                      </div>
+                      <span className={`text-[10px] font-extrabold px-2 py-0.5 rounded ${
+                        product.stock <= 0 
+                          ? "bg-red-500/10 text-red-500 border border-red-500/20" 
+                          : product.stock <= 10 
+                          ? "bg-amber-500/10 text-amber-600" 
+                          : "text-slate-600 bg-slate-100 border border-slate-200"
+                      }`}>
+                        Stock: {product.stock}
+                      </span>
+                    </div>
+                  ) : (
+                    <div className="flex flex-col gap-1.5 w-full">
+                      {/* Fila Precios Sin/Con IVA */}
+                      <div className="flex justify-between items-center text-[10px] border-b border-dashed border-slate-200 pb-1">
+                        <span className="font-bold text-slate-400 uppercase tracking-wider">Precio Sin IVA</span>
+                        <div className="text-right">
+                          <span className="font-bold text-slate-700">${product.priceUsd.toFixed(2)}</span>
+                          <span className="text-slate-500 font-mono ml-1">({priceBs.toFixed(2)} Bs)</span>
+                        </div>
+                      </div>
+                      <div className="flex justify-between items-end w-full">
+                        <div>
+                          <span className="text-[9px] font-bold text-primary uppercase tracking-wider block">Precio Con IVA</span>
+                          <p className="text-sm font-black text-usd">${(product.priceUsd * 1.16).toFixed(2)}</p>
+                          <p className="text-[10px] font-bold text-bs font-mono">{(priceBs * 1.16).toFixed(2)} Bs.</p>
+                        </div>
+                        <span className={`text-[10px] font-extrabold px-2 py-0.5 rounded ${
+                          product.stock <= 0 
+                            ? "bg-red-500/10 text-red-500 border border-red-500/20" 
+                            : product.stock <= 10 
+                            ? "bg-amber-500/10 text-amber-600" 
+                            : "text-slate-600 bg-slate-100 border border-slate-200"
+                        }`}>
+                          Stock: {product.stock}
+                        </span>
+                      </div>
+                    </div>
+                  )}
                 </div>
               </button>
             );
@@ -1743,129 +1774,96 @@ export default function POSPage() {
                   try {
                     const tenantId = user?.tenantId || "default";
 
-                    // 1. Guardar venta en el historial local
-                    const savedHistory = localStorage.getItem(`regiobiz_sales_history_${tenantId}`);
-                    const history = savedHistory ? JSON.parse(savedHistory) : [];
-                    const newRecord = {
-                      id: generatedTicket.id,
-                      controlNumber: generatedTicket.controlNumber,
-                      date: generatedTicket.date,
-                      client: generatedTicket.client ? generatedTicket.client.name : "Consumidor Final",
-                      itemsCount: generatedTicket.items.reduce((sum: number, item: any) => sum + item.quantity, 0),
-                      totalUsd: generatedTicket.totalUsd,
-                      totalBs: generatedTicket.totalBs,
-                      items: generatedTicket.items.map((it: any) => ({ name: it.product.name, qty: it.quantity, price: it.product.priceUsd, code: it.product.code })),
-                      payments: generatedTicket.payments
-                    };
-                    history.unshift(newRecord);
-                    localStorage.setItem(`regiobiz_sales_history_${tenantId}`, JSON.stringify(history));
-
-                    // 2. Sincronizar venta con Supabase
-                    if (isSupabaseConfigured()) {
-                      const { error } = await supabase!.from("sales_history").insert({
-                        id: generatedTicket.id,
-                        tenant_id: tenantId,
-                        invoice_num: generatedTicket.controlNumber,
-                        client_name: generatedTicket.client ? generatedTicket.client.name : "Consumidor Final",
-                        client_id: generatedTicket.client ? generatedTicket.client.id : "",
-                        total_usd: generatedTicket.totalUsd,
-                        total_bs: generatedTicket.totalBs,
-                        rate: exchangeRate || 1, 
-                        payment_method: [
-                          generatedTicket.payments.cashUsd > 0 ? "Efectivo USD" : null,
-                          generatedTicket.payments.zelle > 0 ? "Transferencias" : null,
-                          generatedTicket.payments.cashBs > 0 ? "Efectivo Bs" : null,
-                          generatedTicket.payments.pagoMovil > 0 ? "Pago Móvil" : null,
-                          generatedTicket.payments.posBs > 0 ? "Punto Bs" : null
-                        ].filter(Boolean).join(", "),
-                        items: generatedTicket.items.map((it: any) => ({ name: it.product.name, qty: it.quantity, price: it.product.priceUsd, code: it.product.code })),
-                        seller_name: user?.name || "Vendedor",
-                        created_at: new Date().toISOString()
-                      });
-                      if (error) console.error("Error guardando venta en Supabase:", error);
-                    }
-
-                    // 3. DESCONTAR STOCK DEL INVENTARIO LOCAL Y NUBE
+                    // ── 1. DESCONTAR STOCK DEL INVENTARIO LOCAL ──────────────
+                    // Nota: saveSaleToHistory (llamado al procesar la venta) ya guardó
+                    // la venta en Supabase y localStorage. Aquí solo hacemos post-procesamiento.
                     const savedProducts = localStorage.getItem(`regiobiz_products_${tenantId}`);
                     if (savedProducts) {
                       try {
                         const products = JSON.parse(savedProducts);
                         const updatedProducts = products.map((prod: any) => {
-                          const soldItem = generatedTicket.items.find((it: any) => it.product.code === prod.code || it.product.id === prod.id);
+                          const soldItem = generatedTicket.items.find(
+                            (it: any) => it.product.code === prod.code || it.product.id === prod.id
+                          );
                           if (soldItem) {
-                            return {
-                              ...prod,
-                              stock: Math.max(0, prod.stock - soldItem.quantity)
-                            };
+                            return { ...prod, stock: Math.max(0, prod.stock - soldItem.quantity) };
                           }
                           return prod;
                         });
                         localStorage.setItem(`regiobiz_products_${tenantId}`, JSON.stringify(updatedProducts));
                       } catch (e) {
-                        console.error("Error al procesar JSON de inventario local:", e);
+                        console.error("Error al descontar inventario local:", e);
                       }
                     }
-                    
-                    // Sincronizar stock con Supabase
+
+                    // ── 2. DESCONTAR STOCK EN SUPABASE ───────────────────────
                     if (isSupabaseConfigured()) {
                       for (const it of generatedTicket.items) {
                         try {
-                          const newStock = Math.max(0, it.product.stock - it.quantity);
-                          const { error: stockError } = await supabase!
+                          // Usar RPC decrement o simple update con el stock actual del carrito
+                          const currentStock = it.product.stock;
+                          const newStock = Math.max(0, currentStock - it.quantity);
+                          await supabase!
                             .from("products")
                             .update({ stock: newStock })
-                            .eq("id", `${tenantId}_${it.product.code}`);
-                          
-                          if (stockError) {
-                            console.error(`Error actualizando stock de ${it.product.code}:`, stockError);
-                          }
+                            .eq("id", it.product.id);
                         } catch (dbErr) {
-                          console.error("Excepción en Supabase actualizando stock:", dbErr);
+                          console.error("Error actualizando stock en Supabase:", dbErr);
                         }
                       }
                     }
 
-                    // 4. TRASLADO AUTOMÁTICO DE DINERO A CUENTAS BANCARIAS
+                    // ── 3. REGISTRAR PAGOS EN CUENTAS BANCARIAS (localStorage) ──
                     try {
                       const savedAccounts = localStorage.getItem(`regiobiz_accounts_${tenantId}`);
                       const localInitial = tenantId === "default"
                         ? [
-                            { id: "a1", name: "Caja Fuerte USD", bankName: "Efectivo Divisas", balance: 450.00, currency: "USD" },
-                            { id: "a2", name: "Transferencias / BofA", bankName: "Bank of America", balance: 1100.00, currency: "USD" },
-                            { id: "a3", name: "Banesco Corriente", bankName: "Banco Nacional", balance: 4500.00, currency: "VES" },
-                            { id: "a4", name: "Pago Móvil Mercantil", bankName: "Mercantil Banco", balance: 6000.00, currency: "VES" },
-                            { id: "a5", name: "Caja Chica Bs", bankName: "Efectivo Bolívares", balance: 900.00, currency: "VES" }
+                            { id: "a1", name: "Caja Fuerte USD",       bankName: "Efectivo Divisas",  balance: 450.00,  currency: "USD" },
+                            { id: "a2", name: "Transferencias / BofA", bankName: "Bank of America",   balance: 1100.00, currency: "USD" },
+                            { id: "a3", name: "Banesco Corriente",      bankName: "Banco Nacional",    balance: 4500.00, currency: "VES" },
+                            { id: "a4", name: "Pago Móvil Mercantil",   bankName: "Mercantil Banco",   balance: 6000.00, currency: "VES" },
+                            { id: "a5", name: "Caja Chica Bs",          bankName: "Efectivo Bolívares",balance: 900.00,  currency: "VES" }
                           ]
                         : [
-                            { id: "a1", name: "Caja Fuerte USD", bankName: "Efectivo Divisas", balance: 0.00, currency: "USD" },
-                            { id: "a2", name: "Transferencias / BofA", bankName: "Bank of America", balance: 0.00, currency: "USD" },
-                            { id: "a3", name: "Banesco Corriente", bankName: "Banco Nacional", balance: 0.00, currency: "VES" },
-                            { id: "a4", name: "Pago Móvil Mercantil", bankName: "Mercantil Banco", balance: 0.00, currency: "VES" },
-                            { id: "a5", name: "Caja Chica Bs", bankName: "Efectivo Bolívares", balance: 0.00, currency: "VES" }
+                            { id: "a1", name: "Caja Fuerte USD",       bankName: "Efectivo Divisas",  balance: 0, currency: "USD" },
+                            { id: "a2", name: "Transferencias / BofA", bankName: "Bank of America",   balance: 0, currency: "USD" },
+                            { id: "a3", name: "Banesco Corriente",      bankName: "Banco Nacional",    balance: 0, currency: "VES" },
+                            { id: "a4", name: "Pago Móvil Mercantil",   bankName: "Mercantil Banco",   balance: 0, currency: "VES" },
+                            { id: "a5", name: "Caja Chica Bs",          bankName: "Efectivo Bolívares",balance: 0, currency: "VES" }
                           ];
-                      
+
                       const accounts = savedAccounts ? JSON.parse(savedAccounts) : localInitial;
                       const updatedAccounts = accounts.map((acc: any) => {
-                        if (acc.id === "a1" && generatedTicket.payments.cashUsd > 0) {
+                        if (acc.id === "a1" && generatedTicket.payments.cashUsd > 0)
                           return { ...acc, balance: acc.balance + generatedTicket.payments.cashUsd };
-                        }
-                        if (acc.id === "a2" && generatedTicket.payments.zelle > 0) {
+                        if (acc.id === "a2" && generatedTicket.payments.zelle > 0)
                           return { ...acc, balance: acc.balance + generatedTicket.payments.zelle };
-                        }
-                        if (acc.id === "a3" && generatedTicket.payments.posBs > 0) {
+                        if (acc.id === "a3" && generatedTicket.payments.posBs > 0)
                           return { ...acc, balance: acc.balance + generatedTicket.payments.posBs };
-                        }
-                        if (acc.id === "a4" && generatedTicket.payments.pagoMovil > 0) {
+                        if (acc.id === "a4" && generatedTicket.payments.pagoMovil > 0)
                           return { ...acc, balance: acc.balance + generatedTicket.payments.pagoMovil };
-                        }
-                        if (acc.id === "a5" && generatedTicket.payments.cashBs > 0) {
+                        if (acc.id === "a5" && generatedTicket.payments.cashBs > 0)
                           return { ...acc, balance: acc.balance + generatedTicket.payments.cashBs };
-                        }
                         return acc;
                       });
                       localStorage.setItem(`regiobiz_accounts_${tenantId}`, JSON.stringify(updatedAccounts));
+
+                      // ── 4. SINCRONIZAR SALDO DE CUENTAS EN SUPABASE ──────────
+                      if (isSupabaseConfigured()) {
+                        for (const acc of updatedAccounts) {
+                          try {
+                            await supabase!
+                              .from("financial_accounts")
+                              .update({ balance: acc.balance })
+                              .eq("tenant_id", tenantId)
+                              .eq("account_key", acc.id);
+                          } catch (syncErr) {
+                            console.error("Error sincronizando cuenta bancaria en Supabase:", syncErr);
+                          }
+                        }
+                      }
                     } catch (accErr) {
-                      console.error("Error actualizando cuentas bancarias locales:", accErr);
+                      console.error("Error actualizando cuentas bancarias:", accErr);
                     }
 
                     // 5. Finalizar UI

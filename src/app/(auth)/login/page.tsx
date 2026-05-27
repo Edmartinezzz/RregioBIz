@@ -133,7 +133,7 @@ export default function LoginPage() {
             <img 
               src="/logo.png" 
               alt="RegioBiz Logo" 
-              className="h-28 sm:h-36 w-auto object-contain mb-2 filter drop-shadow-md"
+              className="h-36 sm:h-48 w-auto object-contain mb-3 filter drop-shadow-md"
             />
             <p className="text-[9px] text-slate-500 font-black mt-1.5 uppercase tracking-[0.25em]">
               Sistema Central de Ventas e Inventario

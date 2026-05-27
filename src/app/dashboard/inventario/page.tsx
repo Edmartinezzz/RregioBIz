@@ -331,6 +331,7 @@ export default function InventarioPage() {
         let codeIdx = -1;
         let nameIdx = -1;
         let priceIdx = -1;
+        let priceWithTaxIdx = -1;
         let costIdx = -1;
         let stockIdx = -1;
         let categoryIdx = -1;
@@ -338,8 +339,9 @@ export default function InventarioPage() {
         const synonyms = {
           code: ["codigo", "code", "barcode", "barras", "codigo_de_barra", "codigo_de_barras", "codigo de barra", "codigo de barras", "upc", "sku", "id", "codigo", "clave"],
           name: ["nombre", "nmbre", "nmb", "nom", "name", "descripcion", "producto", "product", "articulo", "titulo", "detalle"],
-          price: ["precio", "price", "precio_usd", "price_usd", "precio_venta", "pvp", "venta", "precio de venta", "precio venta", "valor"],
-          cost: ["costo", "cost", "costo_usd", "cost_usd", "costo_compra", "compra", "costo compra"],
+          price: ["precio", "price", "precio_usd", "price_usd", "precio_venta", "pvp", "venta", "precio de venta", "precio venta", "valor", "precio d eventa sin iva", "precio de venta sin iva", "sin iva"],
+          priceWithTax: ["precio_con_iva", "precio de venta con iva", "precio con iva", "con_iva", "con iva", "precio_iva", "iva"],
+          cost: ["costo", "cost", "costo_usd", "cost_usd", "costo_compra", "compra", "costo compra", "costo unitario", "costo_unitario"],
           stock: ["stock", "cantidad", "existencia", "inventario", "cantidad existente", "cantidad_existente", "qty", "cant", "unidades"],
           category: ["categoria", "category", "categoria", "departamento", "depto", "grupo", "rubro", "tipo"]
         };
@@ -351,6 +353,7 @@ export default function InventarioPage() {
           if (synonyms.code.some(s => cleanH.includes(s) || s.includes(cleanH))) codeIdx = idx;
           else if (synonyms.name.some(s => cleanH.includes(s) || s.includes(cleanH))) nameIdx = idx;
           else if (synonyms.price.some(s => cleanH.includes(s) || s.includes(cleanH))) priceIdx = idx;
+          else if (synonyms.priceWithTax.some(s => cleanH.includes(s) || s.includes(cleanH))) priceWithTaxIdx = idx;
           else if (synonyms.cost.some(s => cleanH.includes(s) || s.includes(cleanH))) costIdx = idx;
           else if (synonyms.stock.some(s => cleanH.includes(s) || s.includes(cleanH))) stockIdx = idx;
           else if (synonyms.category.some(s => cleanH.includes(s) || s.includes(cleanH))) categoryIdx = idx;
@@ -361,7 +364,8 @@ export default function InventarioPage() {
           if (h === "codigo" || h === "code" || h === "sku") { if (codeIdx === -1) codeIdx = idx; }
           else if (h === "nombre" || h === "name" || h === "producto") { if (nameIdx === -1) nameIdx = idx; }
           else if (h === "precio_usd" || h === "price" || h === "precio") { if (priceIdx === -1) priceIdx = idx; }
-          else if (h === "costo_usd" || h === "cost" || h === "costo") { if (costIdx === -1) costIdx = idx; }
+          else if (h === "precio_con_iva" || h === "precio con iva" || h === "iva") { if (priceWithTaxIdx === -1) priceWithTaxIdx = idx; }
+          else if (h === "costo_usd" || h === "cost" || h === "costo" || h === "costo unitario") { if (costIdx === -1) costIdx = idx; }
           else if (h === "stock" || h === "cantidad" || h === "qty") { if (stockIdx === -1) stockIdx = idx; }
           else if (h === "categoria" || h === "category" || h === "categoría") { if (categoryIdx === -1) categoryIdx = idx; }
         });
@@ -386,13 +390,32 @@ export default function InventarioPage() {
           const name = (nameIdx !== -1 && cols[nameIdx] !== undefined) ? String(cols[nameIdx]).trim() : "";
           
           const rawPrice = (priceIdx !== -1 && cols[priceIdx] !== undefined) ? String(cols[priceIdx]).trim() : "0";
+          const rawPriceWithTax = (priceWithTaxIdx !== -1 && cols[priceWithTaxIdx] !== undefined) ? String(cols[priceWithTaxIdx]).trim() : "";
           const rawCost = (costIdx !== -1 && cols[costIdx] !== undefined) ? String(cols[costIdx]).trim() : "0";
           const rawStock = (stockIdx !== -1 && cols[stockIdx] !== undefined) ? String(cols[stockIdx]).trim() : "0";
           const category = (categoryIdx !== -1 && cols[categoryIdx] !== undefined) ? String(cols[categoryIdx]).trim() : "Alimentos";
 
-          const price = parseFloat(rawPrice.replace(",", ".")) || 0;
+          let price = parseFloat(rawPrice.replace(",", ".")) || 0;
+          const priceWithTax = rawPriceWithTax ? (parseFloat(rawPriceWithTax.replace(",", ".")) || 0) : 0;
           const cost = parseFloat(rawCost.replace(",", ".")) || 0;
           const stock = parseInt(rawStock) || 0;
+
+          // Lógica inteligente para autodetectar la categoría de impuestos (IVA)
+          let taxCategory: "exempt" | "iva_16" = "exempt";
+          
+          // Heurística de detección y corrección de error de fórmula de Excel (Stock * 1.20 en vez de Costo * 1.20)
+          const isSuspectedFormulaError = (stock > 1) && (cost > 0) && (price > cost * 3) && (Math.abs(price / stock - 1.20) < 0.02) && (priceWithTax > 0);
+          
+          if (isSuspectedFormulaError) {
+            // El precio real sin IVA debería deducirse del precio con IVA
+            price = parseFloat((priceWithTax / 1.16).toFixed(4));
+            taxCategory = "iva_16";
+          } else {
+            // Si el precio con IVA es superior al precio sin IVA por más de un 5%, asumimos que tiene IVA de 16%
+            if (priceWithTax > price * 1.05) {
+              taxCategory = "iva_16";
+            }
+          }
 
           if (code && name) {
             const newId = `p_csv_${code}_${Math.random().toString(36).substring(2, 6)}`;
@@ -404,7 +427,7 @@ export default function InventarioPage() {
               costUsd: isNaN(cost) ? 0 : cost,
               priceUsd: isNaN(price) ? 0 : price,
               stock: isNaN(stock) ? 0 : stock,
-              taxCategory: "exempt"
+              taxCategory: taxCategory
             });
 
             const tenantId = user?.tenantId || "default";
@@ -417,7 +440,7 @@ export default function InventarioPage() {
               cost_usd: isNaN(cost) ? 0 : cost,
               price_usd: isNaN(price) ? 0 : price,
               stock: isNaN(stock) ? 0 : stock,
-              tax_category: "exempt"
+              tax_category: taxCategory
             });
           }
         }
@@ -659,7 +682,9 @@ export default function InventarioPage() {
       {/* CATÁLOGO DE PRODUCTOS EN CUADRÍCULA MODERNA (FLAT & HIGH CONTRAST) */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
         {filteredProducts.map((product) => {
-          const priceBs = product.priceUsd * exchangeRate;
+          const costBs = product.costUsd * exchangeRate;
+          const invValueUsd = product.stock * product.costUsd;
+          const invValueBs = invValueUsd * exchangeRate;
           const margin = canSeeCosts ? ((product.priceUsd - product.costUsd) / product.priceUsd * 100).toFixed(0) : "";
           const isLowStock = product.stock <= 10;
           
@@ -727,36 +752,54 @@ export default function InventarioPage() {
                 </div>
               </div>
 
-              {/* Parte Inferior: Desglose de Precios Bimonetarios y Existencias */}
-              <div className="grid grid-cols-2 gap-4 pt-4 border-t border-border">
+              {/* Parte Inferior: Desglose de Costos, Existencias y Valor de Inventario */}
+              <div className="grid grid-cols-3 gap-2 pt-4 border-t border-border">
                 
-                {/* Precio de Venta */}
+                {/* Costo Unitario */}
                 <div className="space-y-1">
-                  <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block">Precio Venta</span>
-                  <div className="space-y-0.5">
-                    <p className="text-base font-extrabold text-usd font-mono">
-                      ${product.priceUsd.toFixed(2)}
-                    </p>
-                    <p className="text-[10px] font-bold text-bs font-mono">
-                      {priceBs.toFixed(2)} Bs.
-                    </p>
-                  </div>
+                  <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block">Costo</span>
+                  {canSeeCosts ? (
+                    <div className="space-y-0.5">
+                      <p className="text-xs font-extrabold text-slate-900 font-mono">
+                        ${product.costUsd.toFixed(2)}
+                      </p>
+                      <p className="text-[9px] text-slate-500 font-mono leading-none">
+                        {(product.costUsd * exchangeRate).toFixed(2)} Bs.
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="flex items-center gap-0.5 text-[9px] font-bold text-slate-400 py-1">
+                      <Lock className="w-2.5 h-2.5 text-slate-400" />
+                      <span>Cifrado</span>
+                    </div>
+                  )}
                 </div>
 
                 {/* Stock Numérico */}
-                <div className="space-y-1 text-right">
+                <div className="space-y-1 text-center border-l border-r border-border">
                   <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block">Existencia</span>
-                  <p className="text-lg font-black text-slate-900 font-mono">
+                  <p className={`text-sm font-black font-mono pt-0.5 ${isLowStock ? "text-red-650 animate-pulse font-extrabold" : "text-slate-900"}`}>
                     {product.stock}
                   </p>
+                </div>
+
+                {/* Valor de Inventario */}
+                <div className="space-y-1 text-right">
+                  <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block">Valor Total</span>
                   {canSeeCosts ? (
-                    <p className="text-[9px] font-bold text-slate-500 font-mono">
-                      Costo: ${product.costUsd.toFixed(2)}
-                    </p>
+                    <div className="space-y-0.5">
+                      <p className="text-xs font-extrabold text-usd font-mono">
+                        ${invValueUsd.toFixed(2)}
+                      </p>
+                      <p className="text-[9px] font-bold text-bs font-mono leading-none">
+                        {invValueBs.toFixed(2)} Bs.
+                      </p>
+                    </div>
                   ) : (
-                    <p className="text-[9px] font-bold text-slate-400 flex items-center justify-end gap-0.5">
-                      <Lock className="w-2.5 h-2.5" /> Cifrado
-                    </p>
+                    <div className="flex items-center justify-end gap-0.5 text-[9px] font-bold text-slate-400 py-1">
+                      <Lock className="w-2.5 h-2.5 text-slate-400" />
+                      <span>Cifrado</span>
+                    </div>
                   )}
                 </div>
 
